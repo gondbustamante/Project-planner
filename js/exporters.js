@@ -139,7 +139,7 @@ const Exporters = (() => {
         if (type >= 1 && type <= 7) { hasWeek = true; if (working) wd.push(type - 1); }
         else if (type === 0) { const pr = period(w); if (pr) ex.push({ ...pr, name: '', working }); }
       }
-      for (const x of cal.getElementsByTagName('Exception')) { const pr = period(x); if (pr && !ex.some(y => y.from === pr.from && y.to === pr.to)) ex.push({ ...pr, name: g(x, 'Name'), working: g(x, 'DayWorking') === '1' }); }
+      for (const x of cal.getElementsByTagName('Exception')) { const pr = period(x); if (!pr) continue; const dup = ex.find(y => y.from === pr.from && y.to === pr.to); if (dup) { if (!dup.name) dup.name = g(x, 'Name'); } else ex.push({ ...pr, name: g(x, 'Name'), working: g(x, 'DayWorking') === '1' }); }
       return { uid: g(cal, 'UID'), base: g(cal, 'BaseCalendarUID'), name: g(cal, 'Name'), workDays: hasWeek ? wd : null, exceptions: ex };
     };
     const calEls = [...root.getElementsByTagName('Calendar')].map(parseCalendar);
