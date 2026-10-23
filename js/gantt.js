@@ -142,20 +142,22 @@ const Gantt = (() => {
       } else if (tk.milestone) {
         const cx = x1 + pxDay / 2, cy = y + ROW / 2, r = 7;
         g += `<polygon class="bar" points="${cx},${cy - r} ${cx + r},${cy} ${cx},${cy + r} ${cx - r},${cy}" fill="${crit ? '#d93025' : (path && !path.sel.has(tk.id) && !path.preds.has(tk.id) && !path.succs.has(tk.id)) ? '#9ca3af' : '#111827'}"${stroke}>${tip}</polygon>`;
-        g += `<circle class="link-handle" cx="${cx + r + 6}" cy="${cy}" r="4"/>`;
+        g += `<circle class="link-handle" data-end="start" cx="${cx - r - 6}" cy="${cy}" r="4"><title>Arrastra desde el comienzo</title></circle>`;
+        g += `<circle class="link-handle" data-end="finish" cx="${cx + r + 6}" cy="${cy}" r="4"><title>Arrastra desde el fin</title></circle>`;
       } else {
         const by = y + 7, bh = 14;
         g += `<rect class="bar" x="${x1}" y="${by}" width="${w}" height="${bh}" rx="2" fill="${color}"${stroke}>${tip}</rect>`;
         if (tk.progress > 0) g += `<rect class="bar" x="${x1 + 1}" y="${by + 5}" width="${Math.max((w - 2) * Math.min(tk.progress, 100) / 100, 0)}" height="${bh - 10}" rx="1" fill="rgba(0,0,0,.45)"/>`;
         g += `<rect class="bar-resize" x="${x1 + w - 6}" y="${by}" width="8" height="${bh}"/>`;
-        g += `<circle class="link-handle" cx="${x1 + w + 7}" cy="${by + bh / 2}" r="4"/>`;
+        g += `<circle class="link-handle" data-end="start" cx="${x1 - 7}" cy="${by + bh / 2}" r="4"><title>Arrastra desde el comienzo</title></circle>`;
+        g += `<circle class="link-handle" data-end="finish" cx="${x1 + w + 7}" cy="${by + bh / 2}" r="4"><title>Arrastra desde el fin</title></circle>`;
       }
       if (tk.deadline) { const dd = U.toDay(tk.deadline); const dx = x(dd) + pxDay / 2; over += `<path d="M${dx - 5} ${y + 4} h10 l-5 8 z" fill="${c.deadlineMissed ? '#d93025' : '#16a34a'}"><title>Fecha límite ${U.fmt(dd)}${c.deadlineMissed ? ' · superada' : ''}</title></path>`; }
       const parts = [];
       if (opts.names || sum) parts.push(tk.name);
       if (!sum) parts.push(...tk.resources.map(id => (resById.get(id) || {}).name).filter(Boolean));
       const lbl = sum ? (opts.names ? tk.name : '') : parts.join(', ');
-      const lx = tk.milestone ? x1 + pxDay / 2 + 14 : x2 + 6;
+      const lx = tk.milestone ? x1 + pxDay / 2 + 16 : x2 + 14;
       if (lbl) labels += `<text x="${lx}" y="${y + ROW / 2 + 4}" fill="#374151">${U.esc(lbl)}</text>`;
       if (tk.milestone && !opts.names) labels += `<text x="${lx + (lbl ? lbl.length * 6.2 + 8 : 0)}" y="${y + ROW / 2 + 4}" fill="#374151">${U.esc(tk.name)} · ${U.fmt(c.es)}</text>`;
       g += '</g>';
@@ -216,6 +218,24 @@ const Gantt = (() => {
   }
 
   // ---------- interacción ----------
+  const TYPE_NAME = { FS: 'Fin a comienzo', SS: 'Comienzo a comienzo', FF: 'Fin a fin', SF: 'Comienzo a fin' };
+  const TYPE_SHORT = { FS: 'FC', SS: 'CC', FF: 'FF', SF: 'CF' };
+  /** Tipo de vínculo según el extremo de origen (predecesora) y el de destino (sucesora) */
+  const linkType = (from, to) => from === 'finish' ? (to === 'start' ? 'FS' : 'FF') : (to === 'start' ? 'SS' : 'SF');
+  /** Tarea y extremo (comienzo/fin) bajo el puntero durante un arrastre de vínculo */
+  function linkTarget(e, fromId) {
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const g = el && el.closest && el.closest('g[data-id]');
+    if (!g || g.dataset.id === fromId || !bodyEl.contains(g)) return null;
+    const i = +g.dataset.i; const c = Store.computed.C[i]; const t = Store.project.tasks[i]; if (!c) return null;
+    const rect = bodyEl.getBoundingClientRect(); const px = e.clientX - rect.left;
+    const row = g.querySelector('.row-hover'); const y = row ? +row.getAttribute('y') : 0;
+    const sum = Store.computed.outline.isSummary[i];
+    const xs = t.milestone ? x(c.es) + pxDay / 2 - 7 : x(c.es), xf = t.milestone ? x(c.es) + pxDay / 2 + 7 : x(c.ef + 1);
+    let end = el.dataset && el.dataset.end;
+    if (end !== 'start' && end !== 'finish') end = px < (xs + xf) / 2 ? 'start' : 'finish';
+    return { id: g.dataset.id, i, end, px: end === 'start' ? xs : xf, py: y + (sum ? 8 : ROW / 2) };
+  }
   function onDown(e) {
     if (e.button !== 0) return;
     const g = e.target.closest('g[data-id]'); if (!g) return;
@@ -226,9 +246,14 @@ const Gantt = (() => {
     const rect = bodyEl.getBoundingClientRect();
     const start = { x: e.clientX, y: e.clientY, px: e.clientX - rect.left, py: e.clientY - rect.top };
     if (e.target.classList.contains('link-handle')) {
-      drag = { mode: 'link', id, i, start, line: null }; bodyEl.classList.add('linking');
-      const svg = bodyEl.querySelector('svg'); const ln = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      ln.setAttribute('x1', start.px); ln.setAttribute('y1', start.py); ln.setAttribute('x2', start.px); ln.setAttribute('y2', start.py); ln.setAttribute('stroke', '#1f4f8f'); ln.setAttribute('stroke-dasharray', '4 3'); svg.appendChild(ln); drag.line = ln;
+      const fromEnd = e.target.dataset.end === 'start' ? 'start' : 'finish';
+      const hx = +e.target.getAttribute('cx'), hy = +e.target.getAttribute('cy');
+      drag = { mode: 'link', id, i, start, fromEnd, line: null, marker: null, target: null }; bodyEl.classList.add('linking');
+      const svg = bodyEl.querySelector('svg'); const NS = 'http://www.w3.org/2000/svg';
+      const ln = document.createElementNS(NS, 'line');
+      ln.setAttribute('x1', hx); ln.setAttribute('y1', hy); ln.setAttribute('x2', hx); ln.setAttribute('y2', hy); ln.setAttribute('stroke', '#1f4f8f'); ln.setAttribute('stroke-width', '1.5'); ln.setAttribute('stroke-dasharray', '4 3'); ln.style.pointerEvents = 'none'; svg.appendChild(ln); drag.line = ln;
+      const mk = document.createElementNS(NS, 'circle'); mk.setAttribute('r', '6'); mk.setAttribute('fill', 'none'); mk.setAttribute('stroke', '#16a34a'); mk.setAttribute('stroke-width', '2.5'); mk.setAttribute('visibility', 'hidden'); mk.style.pointerEvents = 'none'; svg.appendChild(mk); drag.marker = mk;
+      App.setStatusHint(`Vincular desde el ${fromEnd === 'start' ? 'comienzo' : 'fin'} de «${t.name}»: suelta sobre el comienzo o el fin de otra tarea`);
     } else if (e.target.classList.contains('bar-resize')) {
       drag = { mode: 'resize', id, i, start, es: c.es, ef: c.ef, el: g.querySelector('rect.bar') };
     } else if (e.target.classList.contains('bar')) {
@@ -239,7 +264,16 @@ const Gantt = (() => {
   function onMove(e) {
     if (!drag) return;
     const dx = e.clientX - drag.start.x;
-    if (drag.mode === 'link') { const rect = bodyEl.getBoundingClientRect(); drag.line.setAttribute('x2', e.clientX - rect.left); drag.line.setAttribute('y2', e.clientY - rect.top); return; }
+    if (drag.mode === 'link') {
+      const rect = bodyEl.getBoundingClientRect(); drag.line.setAttribute('x2', e.clientX - rect.left); drag.line.setAttribute('y2', e.clientY - rect.top);
+      const tg = linkTarget(e, drag.id); drag.target = tg;
+      if (tg) {
+        drag.marker.setAttribute('cx', tg.px); drag.marker.setAttribute('cy', tg.py); drag.marker.setAttribute('visibility', 'visible');
+        const type = linkType(drag.fromEnd, tg.end);
+        App.setStatusHint(`${TYPE_NAME[type]} (${TYPE_SHORT[type]}): «${Store.project.tasks[drag.i].name}» → «${Store.project.tasks[tg.i].name}»`);
+      } else drag.marker.setAttribute('visibility', 'hidden');
+      return;
+    }
     const days = Math.round(dx / pxDay);
     if (drag.mode === 'move') { drag.moved = drag.moved || Math.abs(dx) > 3; drag.days = days; drag.g.querySelectorAll('.bar, .link-handle, .bar-resize').forEach(el => el.setAttribute('transform', `translate(${days * pxDay},0)`)); App.setStatusHint(`Mover a: ${U.fmt(drag.es + days)}`); }
     else if (drag.mode === 'resize') { const newEf = Math.max(drag.es, drag.ef + days); drag.newEf = newEf; drag.el.setAttribute('width', Math.max(x(newEf + 1) - x(drag.es), 2)); App.setStatusHint(`Fin: ${U.fmt(newEf)}`); }
@@ -249,9 +283,12 @@ const Gantt = (() => {
     const d = drag; drag = null; bodyEl.classList.remove('linking'); App.setStatusHint('');
     const { computed } = Store; const cal = computed.C[d.i] && computed.C[d.i].cal || computed.cal;
     if (d.mode === 'link') {
-      d.line.remove();
-      const target = document.elementFromPoint(e.clientX, e.clientY); const g = target && target.closest && target.closest('g[data-id]');
-      if (g && g.dataset.id !== d.id) App.addLink(d.id, g.dataset.id);
+      d.line.remove(); d.marker.remove();
+      const tg = linkTarget(e, d.id);
+      if (tg) {
+        const type = linkType(d.fromEnd, tg.end);
+        if (App.addLink(d.id, tg.id, type)) App.toast(`Vínculo ${TYPE_NAME[type].toLowerCase()} (${TYPE_SHORT[type]}) creado`);
+      }
       return;
     }
     if (d.mode === 'move') {
