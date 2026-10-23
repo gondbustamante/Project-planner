@@ -149,7 +149,10 @@ const App = (() => {
     $('tConstraintDate').value = (t.constraint || {}).date || ''; $('tConstraintDate').disabled = sum;
     $('tProgress').value = t.progress || 0; $('tProgress').disabled = sum;
     $('tNotes').value = t.notes || '';
-    $('tComputed').innerHTML = `<span>Comienzo <b>${U.fmt(c.es)}</b></span><span>Fin <b>${U.fmt(c.ef)}</b></span><span>Comienzo límite <b>${U.fmt(c.ls)}</b></span><span>Fin límite <b>${U.fmt(c.lf)}</b></span><span>Holgura total <b>${c.slack} d</b></span>${c.critical ? '<span style="color:#dc2626">● Crítica</span>' : ''}${t.baseline ? `<span>Línea base ${U.fmt(U.toDay(t.baseline.start))} → ${U.fmt(U.toDay(t.baseline.finish))}</span>` : ''}`;
+    $('tIgnoreCal').checked = !!t.ignoreResourceCalendars; $('tIgnoreCal').disabled = sum;
+    const withCal = t.resources.map(id => project.resources.find(r => r.id === id)).filter(r => r && r.calendar).map(r => r.name);
+    $('tIgnoreCal').parentElement.style.display = withCal.length ? '' : 'none';
+    $('tComputed').innerHTML = (withCal.length && !t.ignoreResourceCalendars ? `<span>Calendario personal de: ${U.esc(withCal.join(', '))}</span>` : '') + `<span>Comienzo <b>${U.fmt(c.es)}</b></span><span>Fin <b>${U.fmt(c.ef)}</b></span><span>Comienzo límite <b>${U.fmt(c.ls)}</b></span><span>Fin límite <b>${U.fmt(c.lf)}</b></span><span>Holgura total <b>${c.slack} d</b></span>${c.critical ? '<span style="color:#dc2626">● Crítica</span>' : ''}${t.baseline ? `<span>Línea base ${U.fmt(U.toDay(t.baseline.start))} → ${U.fmt(U.toDay(t.baseline.finish))}</span>` : ''}`;
     // predecesoras
     const tb = $('tPredTable').querySelector('tbody');
     const candidates = project.tasks.map((x, k) => ({ x, k })).filter(({ x, k }) => k !== i && !Store.isAncestor(k, i) && !Store.isAncestor(i, k));
@@ -181,6 +184,7 @@ const App = (() => {
           x.progress = U.clamp(parseInt($('tProgress').value, 10) || 0, 0, 100);
           const ct = $('tConstraint').value, cd = $('tConstraintDate').value;
           x.constraint = ct === 'ASAP' || !cd ? { type: 'ASAP', date: null } : { type: ct, date: cd };
+          x.ignoreResourceCalendars = $('tIgnoreCal').checked;
         }
         x.predecessors = uniq;
       });
@@ -194,12 +198,22 @@ const App = (() => {
   // ---------- diálogo de responsables ----------
   function openResources() {
     const dlg = $('dlgResources'); const tb = $('rTable').querySelector('tbody');
-    const row = r => { const tr = document.createElement('tr'); tr.dataset.id = r.id; tr.innerHTML = `<td><input class="r-name" value="${U.esc(r.name)}"></td><td><input class="r-role" value="${U.esc(r.role || '')}" placeholder="Rol / equipo"></td><td><input class="r-color" type="color" value="${r.color}"></td><td><button type="button" class="link r-del">✕</button></td>`; tr.querySelector('.r-del').onclick = () => tr.remove(); tb.appendChild(tr); };
+    const cals = new Map(); // calendarios editados en esta sesión del diálogo (id → calendario | null)
+    const pwd = Store.project.calendar.workDays;
+    const row = r => {
+      const tr = document.createElement('tr'); tr.dataset.id = r.id; cals.set(r.id, r.calendar ? JSON.parse(JSON.stringify(r.calendar)) : null);
+      tr.innerHTML = `<td><input class="r-name" value="${U.esc(r.name)}"></td><td><input class="r-role" value="${U.esc(r.role || '')}" placeholder="Rol / equipo"></td><td><input class="r-color" type="color" value="${r.color}"></td><td><button type="button" class="link r-cal">📅 Editar</button><span class="res-cal"></span></td><td><button type="button" class="link r-del">✕</button></td>`;
+      const sum = () => { tr.querySelector('.res-cal').textContent = CalendarEditor.summary(cals.get(r.id), pwd); };
+      sum();
+      tr.querySelector('.r-del').onclick = () => tr.remove();
+      tr.querySelector('.r-cal').onclick = () => openResourceCalendar(tr.querySelector('.r-name').value || r.name, cals.get(r.id), c => { cals.set(r.id, c); sum(); });
+      tb.appendChild(tr);
+    };
     tb.innerHTML = ''; Store.project.resources.forEach(row);
     $('rAdd').onclick = () => { const r = Store.newResource({ name: '' }); r.color = U.PALETTE[tb.children.length % U.PALETTE.length]; row(r); tb.lastElementChild.querySelector('.r-name').focus(); };
     dlg.querySelector('form').onsubmit = ev => {
       ev.preventDefault();
-      const list = [...tb.querySelectorAll('tr')].map(tr => ({ id: tr.dataset.id, name: tr.querySelector('.r-name').value.trim(), role: tr.querySelector('.r-role').value.trim(), color: tr.querySelector('.r-color').value })).filter(r => r.name);
+      const list = [...tb.querySelectorAll('tr')].map(tr => ({ id: tr.dataset.id, name: tr.querySelector('.r-name').value.trim(), role: tr.querySelector('.r-role').value.trim(), color: tr.querySelector('.r-color').value, calendar: cals.get(tr.dataset.id) || null })).filter(r => r.name);
       const ids = new Set(list.map(r => r.id));
       Store.mutate(p => { p.resources = list; for (const t of p.tasks) t.resources = t.resources.filter(id => ids.has(id)); });
       dlg.close();
@@ -208,18 +222,35 @@ const App = (() => {
     dlg.showModal();
   }
 
+  // ---------- diálogo de calendario personal ----------
+  function openResourceCalendar(name, cal, onSave) {
+    const dlg = $('dlgCalendar'); const box = $('cCalendar');
+    $('cTitle').textContent = `Calendario personal · ${name}`;
+    $('cCustom').checked = !!cal;
+    CalendarEditor.render(box, cal || { workDays: null, exceptions: [] }, { projectWorkDays: Store.project.calendar.workDays, allowInherit: true });
+    box.classList.toggle('disabled', !cal);
+    $('cCustom').onchange = () => box.classList.toggle('disabled', !$('cCustom').checked);
+    dlg.querySelector('form').onsubmit = ev => {
+      ev.preventDefault();
+      if (!$('cCustom').checked) { onSave(null); dlg.close(); return; }
+      const c = CalendarEditor.read(box);
+      if (!c) { toast('Marca al menos un día laborable o usa los del proyecto'); return; }
+      onSave(c); dlg.close();
+    };
+    $('cCancel').onclick = () => dlg.close();
+    dlg.showModal();
+  }
+
   // ---------- diálogo de proyecto ----------
   function openSettings() {
     const dlg = $('dlgSettings'); const p = Store.project;
     $('pName').value = p.name; $('pStart').value = p.start;
-    $('pWorkDays').innerHTML = [1, 2, 3, 4, 5, 6, 0].map(d => `<label><input type="checkbox" value="${d}" ${p.calendar.workDays.includes(d) ? 'checked' : ''}>${U.DAYS_LONG[d].slice(0, 3)}</label>`).join('');
-    $('pHolidays').value = p.calendar.holidays.join('\n');
+    CalendarEditor.render($('pCalendar'), p.calendar, { allowInherit: false });
     dlg.querySelector('form').onsubmit = ev => {
       ev.preventDefault();
-      const wd = [...$('pWorkDays').querySelectorAll('input:checked')].map(i => +i.value);
-      if (!wd.length) { toast('Debe haber al menos un día laborable'); return; }
-      const hol = $('pHolidays').value.split(/\s+/).map(s => s.trim()).filter(s => U.toDay(s) != null);
-      Store.mutate(x => { x.name = $('pName').value.trim() || x.name; if (U.toDay($('pStart').value) != null) x.start = $('pStart').value; x.calendar = { workDays: wd, holidays: hol }; });
+      const cal = CalendarEditor.read($('pCalendar'));
+      if (!cal) { toast('Debe haber al menos un día laborable'); return; }
+      Store.mutate(x => { x.name = $('pName').value.trim() || x.name; if (U.toDay($('pStart').value) != null) x.start = $('pStart').value; x.calendar = cal; });
       dlg.close();
     };
     $('pReset').onclick = () => { if (confirm('¿Crear un proyecto nuevo en blanco? El actual se puede recuperar con Deshacer o desde una exportación JSON.')) { Store.mutate(() => Store.blank('Nuevo proyecto')); Store.select([]); dlg.close(); } };
@@ -301,5 +332,5 @@ const App = (() => {
   }
 
   document.addEventListener('DOMContentLoaded', init);
-  return { options, filter, refresh, visibleRows, toast, addTask, deleteSelected, indent, move, addLink, linkSelected, unlinkSelected, saveBaseline, openTaskDialog, openResources, openSettings };
+  return { options, filter, refresh, visibleRows, toast, addTask, deleteSelected, indent, move, addLink, linkSelected, unlinkSelected, saveBaseline, openTaskDialog, openResources, openSettings, openResourceCalendar };
 })();

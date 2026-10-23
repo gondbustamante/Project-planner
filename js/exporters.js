@@ -31,10 +31,19 @@ const Exporters = (() => {
     x += `<SaveVersion>14</SaveVersion><Name>${e(U.safeName(project.name))}.xml</Name><Title>${e(project.name)}</Title>`;
     x += `<ScheduleFromStart>1</ScheduleFromStart><StartDate>${T8(U.fromDay(computed.projStart))}</StartDate><FinishDate>${T17(U.fromDay(computed.projFinish))}</FinishDate>`;
     x += `<CalendarUID>1</CalendarUID><DefaultStartTime>08:00:00</DefaultStartTime><DefaultFinishTime>17:00:00</DefaultFinishTime><MinutesPerDay>480</MinutesPerDay><MinutesPerWeek>2400</MinutesPerWeek><DaysPerMonth>20</DaysPerMonth>`;
-    x += `<Calendars><Calendar><UID>1</UID><Name>Estándar</Name><IsBaseCalendar>1</IsBaseCalendar><BaseCalendarUID>-1</BaseCalendarUID><WeekDays>`;
-    for (let d = 1; d <= 7; d++) { const working = project.calendar.workDays.includes(d - 1); x += `<WeekDay><DayType>${d}</DayType><DayWorking>${working ? 1 : 0}</DayWorking>${working ? '<WorkingTimes><WorkingTime><FromTime>08:00:00</FromTime><ToTime>12:00:00</ToTime></WorkingTime><WorkingTime><FromTime>13:00:00</FromTime><ToTime>17:00:00</ToTime></WorkingTime></WorkingTimes>' : ''}</WeekDay>`; }
-    for (const h of project.calendar.holidays) { if (U.toDay(h) == null) continue; x += `<WeekDay><DayType>0</DayType><DayWorking>0</DayWorking><TimePeriod><FromDate>${h}T00:00:00</FromDate><ToDate>${h}T23:59:00</ToDate></TimePeriod></WeekDay>`; }
-    x += `</WeekDays></Calendar></Calendars>\n<Tasks>`;
+    const WT = '<WorkingTimes><WorkingTime><FromTime>08:00:00</FromTime><ToTime>12:00:00</ToTime></WorkingTime><WorkingTime><FromTime>13:00:00</FromTime><ToTime>17:00:00</ToTime></WorkingTime></WorkingTimes>';
+    const calendarXML = (uid, name, base, workDays, exceptions) => {
+      let c = `<Calendar><UID>${uid}</UID><Name>${e(name)}</Name><IsBaseCalendar>${base < 0 ? 1 : 0}</IsBaseCalendar><BaseCalendarUID>${base}</BaseCalendarUID><WeekDays>`;
+      if (workDays) for (let d = 1; d <= 7; d++) { const working = workDays.includes(d - 1); c += `<WeekDay><DayType>${d}</DayType><DayWorking>${working ? 1 : 0}</DayWorking>${working ? WT : ''}</WeekDay>`; }
+      for (const ex of exceptions) c += `<WeekDay><DayType>0</DayType><DayWorking>${ex.working ? 1 : 0}</DayWorking><TimePeriod><FromDate>${ex.from}T00:00:00</FromDate><ToDate>${ex.to}T23:59:00</ToDate></TimePeriod>${ex.working ? WT : ''}</WeekDay>`;
+      c += `</WeekDays><Exceptions>`;
+      for (const ex of exceptions) c += `<Exception><Name>${e(ex.name || (ex.working ? 'Laborable' : 'No laborable'))}</Name><TimePeriod><FromDate>${ex.from}T00:00:00</FromDate><ToDate>${ex.to}T23:59:00</ToDate></TimePeriod><DayWorking>${ex.working ? 1 : 0}</DayWorking>${ex.working ? WT : ''}</Exception>`;
+      return c + `</Exceptions></Calendar>`;
+    };
+    x += `<Calendars>` + calendarXML(1, 'Estándar', -1, project.calendar.workDays, project.calendar.exceptions);
+    const resCalUid = new Map();
+    project.resources.forEach((r, i) => { if (r.calendar) { const uid = 100 + i; resCalUid.set(r.id, uid); x += calendarXML(uid, r.name, 1, r.calendar.workDays, r.calendar.exceptions); } });
+    x += `</Calendars>\n<Tasks>`;
     x += `<Task><UID>0</UID><ID>0</ID><Name>${e(project.name)}</Name><Type>1</Type><IsNull>0</IsNull><OutlineNumber>0</OutlineNumber><OutlineLevel>0</OutlineLevel><Start>${T8(U.fromDay(computed.projStart))}</Start><Finish>${T17(U.fromDay(computed.projFinish))}</Finish><Duration>${hours(computed.duration)}</Duration><DurationFormat>7</DurationFormat><Summary>1</Summary><Milestone>0</Milestone><PercentComplete>0</PercentComplete></Task>`;
     project.tasks.forEach((t, i) => {
       const c = C[i]; const uid = i + 1;
@@ -45,12 +54,13 @@ const Exporters = (() => {
       const cons = t.constraint || { type: 'ASAP' };
       x += `<ConstraintType>${MSP_CONS[cons.type] ?? 0}</ConstraintType>${cons.date && cons.type !== 'ASAP' ? `<ConstraintDate>${T8(cons.date)}</ConstraintDate>` : ''}`;
       if (t.notes) x += `<Notes>${e(t.notes)}</Notes>`;
+      if (t.ignoreResourceCalendars) x += `<IgnoreResourceCalendar>1</IgnoreResourceCalendar>`;
       if (t.baseline) x += `<Baseline><Number>0</Number><Start>${T8(t.baseline.start)}</Start><Finish>${T17(t.baseline.finish)}</Finish></Baseline>`;
       for (const p of t.predecessors) { const pu = uidOf.get(p.id); if (pu) x += `<PredecessorLink><PredecessorUID>${pu}</PredecessorUID><Type>${MSP_TYPE[p.type] ?? 1}</Type><CrossProject>0</CrossProject><LinkLag>${(p.lag | 0) * 4800}</LinkLag><LagFormat>7</LagFormat></PredecessorLink>`; }
       x += `</Task>`;
     });
     x += `</Tasks>\n<Resources>`;
-    project.resources.forEach((r, i) => { x += `<Resource><UID>${i + 1}</UID><ID>${i + 1}</ID><Name>${e(r.name)}</Name><Type>1</Type>${r.role ? `<Group>${e(r.role)}</Group>` : ''}<MaxUnits>1</MaxUnits></Resource>`; });
+    project.resources.forEach((r, i) => { x += `<Resource><UID>${i + 1}</UID><ID>${i + 1}</ID><Name>${e(r.name)}</Name><Type>1</Type>${r.role ? `<Group>${e(r.role)}</Group>` : ''}<MaxUnits>1</MaxUnits><CalendarUID>${resCalUid.get(r.id) || 1}</CalendarUID></Resource>`; });
     x += `</Resources>\n<Assignments>`;
     let auid = 1;
     project.tasks.forEach((t, i) => { for (const rid of t.resources) { const ru = resUid.get(rid); if (ru) x += `<Assignment><UID>${auid++}</UID><TaskUID>${i + 1}</TaskUID><ResourceUID>${ru}</ResourceUID><Units>1</Units><PercentWorkComplete>${t.progress || 0}</PercentWorkComplete></Assignment>`; } });
@@ -101,29 +111,45 @@ const Exporters = (() => {
     const sd = U.toDay(g(root, 'StartDate')); if (sd != null) p.start = U.fromDay(sd);
     const minPerDay = +g(root, 'MinutesPerDay') || 480;
     const parseDur = s => { const m = /^PT(\d+)H(\d+)M(\d+)S$/.exec(s || ''); if (!m) return null; return Math.round(((+m[1] * 60) + +m[2]) / minPerDay); };
-    // calendario base
-    const cal = root.getElementsByTagName('Calendar')[0];
-    if (cal) {
-      const wd = [], hol = [];
+    // calendarios: el base del proyecto y los personales de los recursos
+    const parseCalendar = cal => {
+      const wd = [], ex = []; let hasWeek = false;
+      const period = el => { const f = U.toDay(g(el, 'FromDate')), t = U.toDay(g(el, 'ToDate')); return f != null && t != null ? { from: U.fromDay(f), to: U.fromDay(t) } : null; };
       for (const w of cal.getElementsByTagName('WeekDay')) {
         const type = +g(w, 'DayType'), working = g(w, 'DayWorking') === '1';
-        if (type >= 1 && type <= 7) { if (working) wd.push(type - 1); }
-        else if (type === 0 && !working) { const f = U.toDay(g(w, 'FromDate')), t = U.toDay(g(w, 'ToDate')); if (f != null && t != null) for (let d = f; d <= t && d - f < 60; d++) hol.push(U.fromDay(d)); }
+        if (type >= 1 && type <= 7) { hasWeek = true; if (working) wd.push(type - 1); }
+        else if (type === 0) { const pr = period(w); if (pr) ex.push({ ...pr, name: '', working }); }
       }
-      if (wd.length) p.calendar.workDays = wd; p.calendar.holidays = hol;
-    }
+      for (const x of cal.getElementsByTagName('Exception')) { const pr = period(x); if (pr && !ex.some(y => y.from === pr.from && y.to === pr.to)) ex.push({ ...pr, name: g(x, 'Name'), working: g(x, 'DayWorking') === '1' }); }
+      return { uid: g(cal, 'UID'), base: g(cal, 'BaseCalendarUID'), name: g(cal, 'Name'), workDays: hasWeek ? wd : null, exceptions: ex };
+    };
+    const calEls = [...root.getElementsByTagName('Calendar')].map(parseCalendar);
+    const baseUid = g(root, 'CalendarUID') || '1';
+    const baseCal = calEls.find(c => c.uid === baseUid) || calEls.find(c => c.base === '-1') || calEls[0];
+    if (baseCal) { if (baseCal.workDays && baseCal.workDays.length) p.calendar.workDays = baseCal.workDays; p.calendar.exceptions = baseCal.exceptions; }
+    const calByUid = new Map(calEls.map(c => [c.uid, c]));
     const resources = root.getElementsByTagName('Resources')[0];
     const resMap = new Map();
-    if (resources) for (const r of resources.getElementsByTagName('Resource')) { const uid = g(r, 'UID'), name = g(r, 'Name'); if (!name || uid === '0') continue; const nr = Store.newResource({ name, role: g(r, 'Group') }); nr.color = U.PALETTE[p.resources.length % U.PALETTE.length]; p.resources.push(nr); resMap.set(uid, nr.id); }
+    if (resources) for (const r of resources.getElementsByTagName('Resource')) {
+      const uid = g(r, 'UID'), name = g(r, 'Name'); if (!name || uid === '0') continue;
+      const nr = Store.newResource({ name, role: g(r, 'Group') }); nr.color = U.PALETTE[p.resources.length % U.PALETTE.length];
+      const rc = calByUid.get(g(r, 'CalendarUID'));
+      if (rc && baseCal && rc.uid !== baseCal.uid) {
+        const sameDays = !rc.workDays || JSON.stringify(rc.workDays) === JSON.stringify(p.calendar.workDays);
+        const own = rc.exceptions.filter(x => !p.calendar.exceptions.some(y => y.from === x.from && y.to === x.to));
+        if (!sameDays || own.length) nr.calendar = { workDays: sameDays ? null : rc.workDays, exceptions: own };
+      }
+      p.resources.push(nr); resMap.set(uid, nr.id);
+    }
     const tasksEl = root.getElementsByTagName('Tasks')[0]; if (!tasksEl) throw new Error('el XML no contiene tareas');
     const uidMap = new Map(); const pending = [];
     for (const te of tasksEl.getElementsByTagName('Task')) {
       if (g(te, 'IsNull') === '1') continue;
       const lvl = +g(te, 'OutlineLevel'); if (!lvl) continue; // UID 0 = resumen del proyecto
       const start = U.toDay(g(te, 'Start')), fin = U.toDay(g(te, 'Finish'));
-      let dur = parseDur(g(te, 'Duration')); if (dur == null) dur = (start != null && fin != null) ? new WorkCalendar(p.calendar.workDays, p.calendar.holidays).duration(start, fin) : 1;
+      let dur = parseDur(g(te, 'Duration')); if (dur == null) dur = (start != null && fin != null) ? new WorkCalendar(p.calendar.workDays, p.calendar.exceptions).duration(start, fin) : 1;
       const ms = g(te, 'Milestone') === '1' || dur === 0;
-      const t = Store.newTask({ name: g(te, 'Name') || 'Tarea', level: lvl, duration: ms ? 0 : Math.max(1, dur), milestone: ms, progress: +g(te, 'PercentComplete') || 0, notes: g(te, 'Notes') });
+      const t = Store.newTask({ name: g(te, 'Name') || 'Tarea', level: lvl, duration: ms ? 0 : Math.max(1, dur), milestone: ms, progress: +g(te, 'PercentComplete') || 0, notes: g(te, 'Notes'), ignoreResourceCalendars: g(te, 'IgnoreResourceCalendar') === '1' });
       const ct = +g(te, 'ConstraintType'), cd = U.toDay(g(te, 'ConstraintDate'));
       if (cd != null) { if (ct === 2) t.constraint = { type: 'MSO', date: U.fromDay(cd) }; else if (ct === 4 || ct === 6) t.constraint = { type: 'SNET', date: U.fromDay(cd) }; }
       const bl = te.getElementsByTagName('Baseline')[0]; if (bl) { const bs = U.toDay(g(bl, 'Start')), bf = U.toDay(g(bl, 'Finish')); if (bs != null && bf != null) t.baseline = { start: U.fromDay(bs), finish: U.fromDay(bf) }; }

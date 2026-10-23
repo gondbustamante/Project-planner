@@ -13,7 +13,8 @@ Aplicación web ligera, sin instalación ni servidor, para crear y gestionar cro
 | Área | Qué incluye |
 |---|---|
 | Tareas | Crear, eliminar, mover arriba/abajo, aplicar o anular sangría (resúmenes / subtareas en varios niveles), contraer y expandir, numeración EDT automática. |
-| Programación | Motor de ruta crítica (CPM): paso adelante y atrás, comienzo y fin tempranos y límite, holgura total y marcado de tareas críticas. Calendario laboral configurable (días de la semana y festivos); las duraciones son en días laborables. |
+| Programación | Motor de ruta crítica (CPM): paso adelante y atrás, comienzo y fin tempranos y límite, holgura total y marcado de tareas críticas. Las duraciones son en días laborables. |
+| Calendarios | **Calendario del proyecto**: días laborables de la semana y excepciones con rango de fechas y descripción (festivos, cierres, días laborables extra), con un botón para cargar los festivos nacionales de España de cualquier año. **Calendarios personales** por responsable (vacaciones, permisos, jornada de 4 días…): parten del calendario del proyecto y sus excepciones prevalecen. Una tarea se programa solo en los días en que todos sus responsables trabajan; en el Gantt esos días no laborables se sombrean en amarillo. En la información de la tarea se puede marcar «Ignorar los calendarios personales». Los calendarios viajan también en el XML de Project. |
 | Dependencias | Fin‑Comienzo (FC), Comienzo‑Comienzo (CC), Fin‑Fin (FF) y Comienzo‑Fin (CF) con posposición positiva o negativa. Se crean desde el diálogo de la tarea, escribiendo en la columna «Predecesoras» (`3; 5CC+2d`), con el botón «Vincular» sobre varias tareas seleccionadas o arrastrando desde el círculo al final de una barra hasta otra. Detecta y señala dependencias circulares. |
 | Restricciones | Lo antes posible, No comenzar antes del, Debe comenzar el. Al escribir una fecha de comienzo o arrastrar una barra se aplica «No comenzar antes del», como hace Project. |
 | Hitos | Tareas de duración 0, dibujadas como rombo con fecha. |
@@ -44,9 +45,10 @@ Aplicación web ligera, sin instalación ni servidor, para crear y gestionar cro
 index.html        Interfaz (barra de herramientas, tabla, Gantt, diálogos)
 css/styles.css    Estilos, incluido el modo de impresión
 js/utils.js       Fechas (enteros UTC), formato, descargas
-js/calendar.js    Calendario laboral (días laborables, festivos, aritmética de fechas)
+js/calendar.js    Calendarios laborales (días, excepciones, calendarios compuestos)
 js/scheduler.js   Esquema EDT y motor CPM (dependencias, restricciones, holguras, ruta crítica)
 js/store.js       Estado, deshacer/rehacer, guardado local, proyecto de ejemplo
+js/caleditor.js   Editor de calendarios (proyecto y responsables)
 js/table.js       Hoja de tareas con edición en línea
 js/gantt.js       Gantt en SVG e interacción (arrastrar, redimensionar, vincular)
 js/exporters.js   Exportación e importación
@@ -62,5 +64,5 @@ En el repositorio: *Settings → Pages → Source: Deploy from a branch*, rama `
 ## Limitaciones conocidas
 
 - Los datos viven en el navegador. Para trabajar en varios equipos o compartir, usa Exportar/Importar JSON (o el XML de Project).
-- Las duraciones son en días laborables enteros; no hay horas ni calendarios por recurso.
+- Las duraciones son en días laborables enteros; no hay horas ni turnos.
 - La nivelación de recursos y los costes no están implementados.

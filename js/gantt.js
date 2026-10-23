@@ -67,7 +67,11 @@ const Gantt = (() => {
       bg += `<rect class="row-sel" data-sel="${tasks[rows[k]].id}" x="0" y="${k * ROW}" width="${width}" height="${ROW}" visibility="${sel.has(tasks[rows[k]].id) ? 'visible' : 'hidden'}"/>`;
       bg += `<line x1="0" y1="${(k + 1) * ROW - .5}" x2="${width}" y2="${(k + 1) * ROW - .5}" stroke="#eceff3"/>`;
     }
-    if (pxDay >= 8) { for (let d = range.start; d < range.end; d++) if (!cal.isWork(d)) bg += `<rect x="${x(d)}" y="0" width="${pxDay}" height="${height}" fill="#eef0f3"/>`; }
+    if (pxDay >= 8) {
+      for (let d = range.start; d < range.end; d++) if (!cal.isWork(d)) bg += `<rect x="${x(d)}" y="0" width="${pxDay}" height="${height}" fill="#eef0f3"/>`;
+      // filas con calendario propio (responsables con calendario personal): sombrear sus días no laborables adicionales
+      for (const i of rows) { const tc = C[i].cal; if (!tc || tc === cal) continue; const y = yOf.get(i); const lo = Math.max(range.start, C[i].es - 10), hi = Math.min(range.end, C[i].ef + 10); for (let d = lo; d < hi; d++) if (cal.isWork(d) && !tc.isWork(d)) bg += `<rect x="${x(d)}" y="${y + 2}" width="${pxDay}" height="${ROW - 4}" fill="#fde68a" opacity=".55"><title>No laborable para el responsable</title></rect>`; }
+    }
     if (zoom !== 'day') { for (let d = range.start; d < range.end; d++) { const p = U.parts(d); if (p.d === 1) bg += `<line x1="${x(d)}" y1="0" x2="${x(d)}" y2="${height}" stroke="#e3e6eb"/>`; } }
     else { for (let d = range.start; d < range.end; d++) bg += `<line x1="${x(d)}" y1="0" x2="${x(d)}" y2="${height}" stroke="#f1f3f5"/>`; }
     const td = U.today(); if (td >= range.start && td <= range.end) bg += `<line class="today" x1="${x(td) + pxDay / 2}" y1="0" x2="${x(td) + pxDay / 2}" y2="${height}"/>`;

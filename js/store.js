@@ -10,33 +10,44 @@ const Store = (() => {
     return {
       id: U.uid(), name: o.name ?? 'Nueva tarea', level: o.level ?? 1, duration: o.duration ?? (o.milestone ? 0 : 5),
       milestone: !!o.milestone, progress: o.progress ?? 0, predecessors: o.predecessors ?? [], resources: o.resources ?? [],
-      constraint: o.constraint ?? { type: 'ASAP', date: null }, notes: o.notes ?? '', collapsed: false, baseline: o.baseline ?? null,
+      constraint: o.constraint ?? { type: 'ASAP', date: null }, notes: o.notes ?? '', collapsed: false, baseline: o.baseline ?? null, ignoreResourceCalendars: !!o.ignoreResourceCalendars,
       start: null, finish: null
     };
   }
   function newResource(o = {}) {
-    return { id: U.uid(), name: o.name ?? 'Responsable', role: o.role ?? '', color: o.color ?? U.PALETTE[(project ? project.resources.length : 0) % U.PALETTE.length] };
+    return { id: U.uid(), name: o.name ?? 'Responsable', role: o.role ?? '', color: o.color ?? U.PALETTE[(project ? project.resources.length : 0) % U.PALETTE.length], calendar: o.calendar ?? null };
   }
   function blank(name) {
-    return { version: 1, name: name || 'Nuevo proyecto', start: U.fromDay(U.today()), calendar: { workDays: [1, 2, 3, 4, 5], holidays: [] }, resources: [], tasks: [], baselineDate: null };
+    return { version: 1, name: name || 'Nuevo proyecto', start: U.fromDay(U.today()), calendar: { workDays: [1, 2, 3, 4, 5], exceptions: [] }, resources: [], tasks: [], baselineDate: null };
   }
   function normalize(p) {
     const b = blank();
     p = Object.assign(b, p || {});
-    p.calendar = Object.assign({ workDays: [1, 2, 3, 4, 5], holidays: [] }, p.calendar || {});
+    p.calendar = normalizeCalendar(p.calendar, true);
     if (!Array.isArray(p.resources)) p.resources = [];
     if (!Array.isArray(p.tasks)) p.tasks = [];
-    p.resources = p.resources.map(r => Object.assign(newResource(), r));
+    p.resources = p.resources.map(r => { const x = Object.assign(newResource(), r); x.calendar = x.calendar ? normalizeCalendar(x.calendar, false) : null; return x; });
     p.tasks = p.tasks.map(t => Object.assign(newTask(), t));
     if (U.toDay(p.start) == null) p.start = U.fromDay(U.today());
     return p;
+  }
+
+  /** Normaliza un calendario: {workDays, exceptions:[{from,to,name,working}]}. Acepta el formato antiguo (holidays: ['AAAA-MM-DD']). */
+  function normalizeCalendar(c, isProject) {
+    c = c || {};
+    const wd = Array.isArray(c.workDays) ? c.workDays.map(Number).filter(d => d >= 0 && d <= 6) : null;
+    const ex = WorkCalendar.normalizeExceptions([...(c.exceptions || []), ...(c.holidays || [])]);
+    return { workDays: wd && wd.length ? [...new Set(wd)].sort() : (isProject ? [1, 2, 3, 4, 5] : null), exceptions: ex };
   }
 
   function sample() {
     const p = blank('Lanzamiento producto X');
     project = p;
     const r = (name, role) => { const x = newResource({ name, role }); p.resources.push(x); return x.id; };
+    p.calendar.exceptions = [{ from: '2026-11-02', to: '2026-11-02', name: 'Todos los Santos (traslado)', working: false }, { from: '2026-12-07', to: '2026-12-08', name: 'Puente de la Constitución', working: false }, { from: '2026-12-24', to: '2026-12-25', name: 'Navidad', working: false }];
     const ana = r('Ana López', 'PM'), luis = r('Luis Pérez', 'Diseño'), marta = r('Marta Ruiz', 'Desarrollo'), jon = r('Jon Etxeberria', 'QA'), sara = r('Sara Gómez', 'Marketing');
+    p.resources[1].calendar = { workDays: null, exceptions: [{ from: '2026-11-16', to: '2026-11-20', name: 'Vacaciones', working: false }] };
+    p.resources[2].calendar = { workDays: [1, 2, 3, 4], exceptions: [] };
     const T = [];
     const add = (name, level, duration, opts = {}) => { const t = newTask({ name, level, duration, ...opts }); p.tasks.push(t); T.push(t); return t; };
     const fs = (...ids) => ids.map(i => ({ id: T[i].id, type: 'FS', lag: 0 }));
@@ -112,7 +123,7 @@ const Store = (() => {
   return {
     get project() { return project; }, get computed() { return computed; }, get selection() { return selection; },
     get canUndo() { return undoStack.length > 0; }, get canRedo() { return redoStack.length > 0; },
-    newTask, newResource, blank, normalize, sample, load, save, recompute, mutate, undo, redo, subscribe, emit,
+    newTask, newResource, blank, normalize, normalizeCalendar, sample, load, save, recompute, mutate, undo, redo, subscribe, emit,
     select, selectRange, selectedIndices, taskById, indexOf, blockEnd, isAncestor
   };
 })();

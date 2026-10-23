@@ -108,6 +108,7 @@
       <label>Fecha de restricción<input id="tConstraintDate" type="date"></label>
       <label>% completado<input id="tProgress" type="number" min="0" max="100" step="5"></label>
       <label class="check"><input id="tMilestone" type="checkbox"> Es un hito</label>
+      <label class="check" style="grid-column:1 / -1"><input id="tIgnoreCal" type="checkbox"> Ignorar los calendarios personales de los responsables (usar solo el del proyecto)</label>
     </div>
     <fieldset>
       <legend>Predecesoras</legend>
@@ -135,7 +136,7 @@
   <form method="dialog" class="dlg">
     <h2>Responsables</h2>
     <table class="mini" id="rTable">
-      <thead><tr><th>Nombre</th><th>Rol</th><th>Color</th><th></th></tr></thead>
+      <thead><tr><th>Nombre</th><th>Rol</th><th>Color</th><th>Calendario</th><th></th></tr></thead>
       <tbody></tbody>
     </table>
     <button type="button" id="rAdd" class="secondary">+ Añadir responsable</button>
@@ -154,15 +155,24 @@
       <label>Nombre<input id="pName"></label>
       <label>Fecha de inicio<input id="pStart" type="date"></label>
     </div>
-    <fieldset>
-      <legend>Días laborables</legend>
-      <div class="weekdays" id="pWorkDays"></div>
-    </fieldset>
-    <label>Festivos (una fecha por línea, AAAA-MM-DD)<textarea id="pHolidays" rows="4" placeholder="2026-12-25"></textarea></label>
+    <div id="pCalendar" class="cal-editor"></div>
     <div class="actions">
       <button type="button" class="secondary danger" id="pReset">Nuevo proyecto en blanco</button>
       <span class="spacer"></span>
       <button type="button" class="secondary" id="pCancel">Cancelar</button>
+      <button type="submit" class="primary">Aceptar</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Diálogo: calendario personal de un responsable -->
+<dialog id="dlgCalendar">
+  <form method="dialog" class="dlg">
+    <h2 id="cTitle">Calendario personal</h2>
+    <label class="check"><input id="cCustom" type="checkbox"> Usar un calendario personal distinto del proyecto (vacaciones, jornada reducida…)</label>
+    <div id="cCalendar" class="cal-editor"></div>
+    <div class="actions">
+      <button type="button" class="secondary" id="cCancel">Cancelar</button>
       <button type="submit" class="primary">Aceptar</button>
     </div>
   </form>
@@ -174,6 +184,7 @@
 <script src="js/calendar.js"></script>
 <script src="js/scheduler.js"></script>
 <script src="js/store.js"></script>
+<script src="js/caleditor.js"></script>
 <script src="js/table.js"></script>
 <script src="js/gantt.js"></script>
 <script src="js/exporters.js"></script>
