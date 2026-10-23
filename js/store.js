@@ -1,0 +1,118 @@
+/* Estado de la aplicación: proyecto, selección, deshacer/rehacer y persistencia local */
+const Store = (() => {
+  const KEY = 'planner.project.v1';
+  let project = null, computed = null;
+  const undoStack = [], redoStack = [], listeners = [];
+  let selection = [];
+  let anchor = null;
+
+  function newTask(o = {}) {
+    return {
+      id: U.uid(), name: o.name ?? 'Nueva tarea', level: o.level ?? 1, duration: o.duration ?? (o.milestone ? 0 : 5),
+      milestone: !!o.milestone, progress: o.progress ?? 0, predecessors: o.predecessors ?? [], resources: o.resources ?? [],
+      constraint: o.constraint ?? { type: 'ASAP', date: null }, notes: o.notes ?? '', collapsed: false, baseline: o.baseline ?? null,
+      start: null, finish: null
+    };
+  }
+  function newResource(o = {}) {
+    return { id: U.uid(), name: o.name ?? 'Responsable', role: o.role ?? '', color: o.color ?? U.PALETTE[(project ? project.resources.length : 0) % U.PALETTE.length] };
+  }
+  function blank(name) {
+    return { version: 1, name: name || 'Nuevo proyecto', start: U.fromDay(U.today()), calendar: { workDays: [1, 2, 3, 4, 5], holidays: [] }, resources: [], tasks: [], baselineDate: null };
+  }
+  function normalize(p) {
+    const b = blank();
+    p = Object.assign(b, p || {});
+    p.calendar = Object.assign({ workDays: [1, 2, 3, 4, 5], holidays: [] }, p.calendar || {});
+    if (!Array.isArray(p.resources)) p.resources = [];
+    if (!Array.isArray(p.tasks)) p.tasks = [];
+    p.resources = p.resources.map(r => Object.assign(newResource(), r));
+    p.tasks = p.tasks.map(t => Object.assign(newTask(), t));
+    if (U.toDay(p.start) == null) p.start = U.fromDay(U.today());
+    return p;
+  }
+
+  function sample() {
+    const p = blank('Lanzamiento producto X');
+    project = p;
+    const r = (name, role) => { const x = newResource({ name, role }); p.resources.push(x); return x.id; };
+    const ana = r('Ana López', 'PM'), luis = r('Luis Pérez', 'Diseño'), marta = r('Marta Ruiz', 'Desarrollo'), jon = r('Jon Etxeberria', 'QA'), sara = r('Sara Gómez', 'Marketing');
+    const T = [];
+    const add = (name, level, duration, opts = {}) => { const t = newTask({ name, level, duration, ...opts }); p.tasks.push(t); T.push(t); return t; };
+    const fs = (...ids) => ids.map(i => ({ id: T[i].id, type: 'FS', lag: 0 }));
+    add('Fase 1 · Definición', 1, 0);
+    add('Kick-off del proyecto', 2, 0, { milestone: true, resources: [ana] });
+    add('Recogida de requisitos', 2, 5, { predecessors: fs(1), resources: [ana], progress: 100 });
+    add('Análisis de viabilidad', 2, 4, { predecessors: fs(2), resources: [ana, marta], progress: 60 });
+    add('Aprobación del alcance', 2, 0, { milestone: true, predecessors: fs(3) });
+    add('Fase 2 · Diseño', 1, 0);
+    add('Diseño UX', 2, 8, { predecessors: fs(4), resources: [luis] });
+    add('Diseño visual', 2, 6, { predecessors: [{ id: T[6].id, type: 'SS', lag: 3 }], resources: [luis] });
+    add('Arquitectura técnica', 2, 5, { predecessors: fs(4), resources: [marta] });
+    add('Fase 3 · Desarrollo', 1, 0);
+    add('Backend', 2, 15, { predecessors: fs(8), resources: [marta] });
+    add('Frontend', 2, 12, { predecessors: fs(7, 8), resources: [marta] });
+    add('Integración', 2, 4, { predecessors: fs(10, 11), resources: [marta] });
+    add('Fase 4 · Pruebas y lanzamiento', 1, 0);
+    add('Pruebas QA', 2, 6, { predecessors: fs(12), resources: [jon] });
+    add('Corrección de incidencias', 2, 4, { predecessors: fs(14), resources: [marta, jon] });
+    add('Plan de comunicación', 2, 10, { predecessors: fs(4), resources: [sara] });
+    add('Lanzamiento', 2, 0, { milestone: true, predecessors: fs(15, 16) });
+    return p;
+  }
+
+  function recompute() { computed = Scheduler.compute(project); }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(project)); } catch (e) { /* sin persistencia */ } }
+  function load() {
+    try { const s = localStorage.getItem(KEY); project = s ? normalize(JSON.parse(s)) : sample(); }
+    catch (e) { project = sample(); }
+    recompute();
+  }
+  function emit(type = 'data') { listeners.forEach(f => f(type)); }
+  function subscribe(f) { listeners.push(f); }
+
+  function snapshot() { return JSON.stringify(project); }
+  /** Aplica una mutación con registro de deshacer. fn puede devolver un proyecto nuevo. */
+  function mutate(fn) {
+    undoStack.push(snapshot()); if (undoStack.length > 200) undoStack.shift();
+    redoStack.length = 0;
+    const r = fn(project);
+    if (r && typeof r === 'object') project = normalize(r);
+    recompute(); save(); emit();
+  }
+  function undo() { if (!undoStack.length) return false; redoStack.push(snapshot()); project = normalize(JSON.parse(undoStack.pop())); recompute(); save(); emit(); return true; }
+  function redo() { if (!redoStack.length) return false; undoStack.push(snapshot()); project = normalize(JSON.parse(redoStack.pop())); recompute(); save(); emit(); return true; }
+
+  // ---- selección ----
+  function select(ids, opts = {}) {
+    ids = Array.isArray(ids) ? ids : (ids ? [ids] : []);
+    if (opts.toggle) { ids.forEach(id => { const k = selection.indexOf(id); if (k >= 0) selection.splice(k, 1); else selection.push(id); }); }
+    else if (opts.add) { ids.forEach(id => { if (!selection.includes(id)) selection.push(id); }); }
+    else selection = ids.slice();
+    if (ids.length && !opts.keepAnchor) anchor = ids[ids.length - 1];
+    emit('selection');
+  }
+  function selectRange(toId) {
+    const tasks = project.tasks;
+    const a = tasks.findIndex(t => t.id === anchor), b = tasks.findIndex(t => t.id === toId);
+    if (a < 0 || b < 0) return select(toId);
+    const [lo, hi] = a < b ? [a, b] : [b, a];
+    selection = tasks.slice(lo, hi + 1).map(t => t.id);
+    emit('selection');
+  }
+  const selectedIndices = () => selection.map(id => project.tasks.findIndex(t => t.id === id)).filter(i => i >= 0).sort((a, b) => a - b);
+  const taskById = id => project.tasks.find(t => t.id === id);
+  const indexOf = id => project.tasks.findIndex(t => t.id === id);
+
+  // ---- utilidades de esquema ----
+  /** Índice final (exclusivo) del bloque formado por la tarea i y sus descendientes */
+  function blockEnd(i) { const tasks = project.tasks; let j = i + 1; while (j < tasks.length && tasks[j].level > tasks[i].level) j++; return j; }
+  function isAncestor(a, b) { const ol = computed.outline; let p = ol.parent[b]; while (p >= 0) { if (p === a) return true; p = ol.parent[p]; } return false; }
+
+  return {
+    get project() { return project; }, get computed() { return computed; }, get selection() { return selection; },
+    get canUndo() { return undoStack.length > 0; }, get canRedo() { return redoStack.length > 0; },
+    newTask, newResource, blank, normalize, sample, load, save, recompute, mutate, undo, redo, subscribe, emit,
+    select, selectRange, selectedIndices, taskById, indexOf, blockEnd, isAncestor
+  };
+})();

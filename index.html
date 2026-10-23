@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Planner · Cronogramas y diagramas de Gantt</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand" title="Planner">▦ Planner</div>
+  <input id="projectName" class="project-name" title="Nombre del proyecto" spellcheck="false">
+  <div class="toolbar">
+    <div class="tb-group">
+      <button id="btnUndo" title="Deshacer (Ctrl+Z)">↶</button>
+      <button id="btnRedo" title="Rehacer (Ctrl+Y)">↷</button>
+    </div>
+    <div class="tb-group">
+      <button id="btnAddTask" title="Nueva tarea (Insert)">+ Tarea</button>
+      <button id="btnAddMilestone" title="Nuevo hito">◆ Hito</button>
+      <button id="btnInfo" title="Información de la tarea (Enter)">ℹ</button>
+      <button id="btnDelete" title="Eliminar tarea (Supr)">🗑</button>
+    </div>
+    <div class="tb-group">
+      <button id="btnOutdent" title="Anular sangría (Shift+Tab)">⇤</button>
+      <button id="btnIndent" title="Aplicar sangría (Tab)">⇥</button>
+      <button id="btnUp" title="Subir">↑</button>
+      <button id="btnDown" title="Bajar">↓</button>
+    </div>
+    <div class="tb-group">
+      <button id="btnLink" title="Vincular tareas seleccionadas (Fin a Comienzo)">🔗 Vincular</button>
+      <button id="btnUnlink" title="Desvincular tareas seleccionadas">⛓ Desvincular</button>
+    </div>
+    <div class="tb-group">
+      <label class="toggle"><input type="checkbox" id="chkCritical" checked> Ruta crítica</label>
+      <label class="toggle"><input type="checkbox" id="chkBaseline"> Línea base</label>
+      <button id="btnBaseline" title="Guardar la planificación actual como línea base">Guardar LB</button>
+    </div>
+    <div class="tb-group">
+      <select id="zoom" title="Escala temporal">
+        <option value="day">Días</option>
+        <option value="week" selected>Semanas</option>
+        <option value="month">Meses</option>
+      </select>
+      <button id="btnToday" title="Ir a hoy">Hoy</button>
+    </div>
+    <div class="tb-group">
+      <button id="btnResources">👥 Responsables</button>
+      <button id="btnSettings">⚙ Proyecto</button>
+    </div>
+    <div class="tb-group">
+      <button id="btnImport" title="Importar JSON o XML de MS Project">⤓ Importar</button>
+      <div class="dropdown">
+        <button id="btnExport">⤒ Exportar ▾</button>
+        <div class="menu" id="exportMenu">
+          <button data-export="json">JSON (copia completa del proyecto)</button>
+          <button data-export="xml">XML de Microsoft Project</button>
+          <button data-export="csv">CSV (Excel)</button>
+          <button data-export="png">Imagen PNG del Gantt</button>
+          <button data-export="svg">Imagen SVG del Gantt</button>
+          <button data-export="print">Imprimir / PDF</button>
+        </div>
+      </div>
+      <input type="file" id="fileImport" accept=".json,.xml" hidden>
+    </div>
+  </div>
+</header>
+
+<div class="filterbar">
+  <input id="filterText" type="search" placeholder="Buscar tarea…">
+  <select id="filterResource"><option value="">Todos los responsables</option></select>
+  <label class="toggle"><input type="checkbox" id="filterCritical"> Solo críticas</label>
+  <span class="spacer"></span>
+  <button id="btnExpandAll" class="link">Expandir todo</button>
+  <button id="btnCollapseAll" class="link">Contraer todo</button>
+</div>
+
+<main class="workspace">
+  <section class="grid-pane" id="gridPane">
+    <table class="grid" id="grid">
+      <thead id="gridHead"></thead>
+      <tbody id="gridBody"></tbody>
+    </table>
+  </section>
+  <div class="splitter" id="splitter" title="Arrastra para redimensionar"></div>
+  <section class="gantt-pane" id="ganttPane">
+    <div class="gantt-header" id="ganttHeader"></div>
+    <div class="gantt-body" id="ganttBody"></div>
+  </section>
+</main>
+
+<footer class="statusbar" id="statusbar"></footer>
+
+<!-- Diálogo: información de la tarea -->
+<dialog id="dlgTask">
+  <form method="dialog" class="dlg">
+    <h2>Información de la tarea</h2>
+    <div class="form-grid">
+      <label>Nombre<input id="tName" required></label>
+      <label>Duración (días laborables)<input id="tDuration" type="number" min="0" step="1"></label>
+      <label>Restricción
+        <select id="tConstraint">
+          <option value="ASAP">Lo antes posible</option>
+          <option value="SNET">No comenzar antes del</option>
+          <option value="MSO">Debe comenzar el</option>
+        </select>
+      </label>
+      <label>Fecha de restricción<input id="tConstraintDate" type="date"></label>
+      <label>% completado<input id="tProgress" type="number" min="0" max="100" step="5"></label>
+      <label class="check"><input id="tMilestone" type="checkbox"> Es un hito</label>
+    </div>
+    <fieldset>
+      <legend>Predecesoras</legend>
+      <table class="mini" id="tPredTable">
+        <thead><tr><th>Tarea</th><th>Tipo</th><th>Posposición (días)</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <button type="button" id="tAddPred" class="secondary">+ Añadir predecesora</button>
+    </fieldset>
+    <fieldset>
+      <legend>Responsables</legend>
+      <div id="tResources" class="chips"></div>
+    </fieldset>
+    <label>Notas<textarea id="tNotes" rows="3"></textarea></label>
+    <div class="computed" id="tComputed"></div>
+    <div class="actions">
+      <button type="button" value="cancel" class="secondary" id="tCancel">Cancelar</button>
+      <button type="submit" value="ok" class="primary">Aceptar</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Diálogo: responsables -->
+<dialog id="dlgResources">
+  <form method="dialog" class="dlg">
+    <h2>Responsables</h2>
+    <table class="mini" id="rTable">
+      <thead><tr><th>Nombre</th><th>Rol</th><th>Color</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <button type="button" id="rAdd" class="secondary">+ Añadir responsable</button>
+    <div class="actions">
+      <button type="button" class="secondary" id="rCancel">Cancelar</button>
+      <button type="submit" class="primary">Aceptar</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Diálogo: proyecto -->
+<dialog id="dlgSettings">
+  <form method="dialog" class="dlg">
+    <h2>Configuración del proyecto</h2>
+    <div class="form-grid">
+      <label>Nombre<input id="pName"></label>
+      <label>Fecha de inicio<input id="pStart" type="date"></label>
+    </div>
+    <fieldset>
+      <legend>Días laborables</legend>
+      <div class="weekdays" id="pWorkDays"></div>
+    </fieldset>
+    <label>Festivos (una fecha por línea, AAAA-MM-DD)<textarea id="pHolidays" rows="4" placeholder="2026-12-25"></textarea></label>
+    <div class="actions">
+      <button type="button" class="secondary danger" id="pReset">Nuevo proyecto en blanco</button>
+      <span class="spacer"></span>
+      <button type="button" class="secondary" id="pCancel">Cancelar</button>
+      <button type="submit" class="primary">Aceptar</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast"></div>
+
+<script src="js/utils.js"></script>
+<script src="js/calendar.js"></script>
+<script src="js/scheduler.js"></script>
+<script src="js/store.js"></script>
+<script src="js/table.js"></script>
+<script src="js/gantt.js"></script>
+<script src="js/exporters.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
