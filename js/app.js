@@ -1,6 +1,6 @@
 /* Controlador principal: cinta de opciones, vistas, filtros, menú contextual, diálogos, teclado y refresco */
 const App = (() => {
-  const options = { critical: true, slack: false, baseline: false, path: false, timeline: true, names: false };
+  const options = { critical: true, slack: false, path: false, timeline: true, names: false, resNames: false, blShow: [], blCompare: 0 };
   const filter = { text: '', resource: '', critical: false, incomplete: false, level: 0 };
   const $ = id => document.getElementById(id);
   let toastTimer = null, view = 'gantt', statusHint = '';
@@ -41,7 +41,6 @@ const App = (() => {
     const n = Store.selection.length, has = n > 0;
     ['btnDelete', 'btnIndent', 'btnOutdent', 'btnUp', 'btnDown', 'btnInfo', 'btnNotes', 'btnUnlink', 'btnScrollTo', 'btnPct0', 'btnPct25', 'btnPct50', 'btnPct75', 'btnPct100'].forEach(id => $(id).disabled = !has);
     $('btnLink').disabled = n < 2;
-    $('btnClearBaseline').disabled = !Store.project.baselineDate;
   }
   function renderStatus() {
     const { project, computed } = Store; const C = computed.C, ol = computed.outline;
@@ -53,7 +52,7 @@ const App = (() => {
     $('statusbar').innerHTML = (statusHint ? `<span><b>${U.esc(statusHint)}</b></span>` : '<span>Listo</span>')
       + `<span>Inicio <b>${U.fmt(computed.projStart)}</b></span><span>Fin <b>${U.fmt(computed.projFinish)}</b></span><span>Duración <b>${computed.duration} d</b></span>`
       + `<span>Tareas <b>${leaves}</b></span><span>Críticas <b>${crit}</b></span><span>Avance <b>${done}%</b></span>`
-      + (project.baselineDate ? `<span>Línea base <b>${U.fmt(U.toDay(project.baselineDate))}</b></span>` : '')
+      + (project.baselines[options.blCompare] ? `<span>Comparando con <b>${Store.BL.name(options.blCompare)}</b>${project.baselines[options.blCompare].date ? ' del ' + U.fmt(U.toDay(project.baselines[options.blCompare].date)) : ''}</span>` : '')
       + (late ? `<span class="warn">⚑ ${late} fecha(s) límite superada(s)</span>` : '')
       + (computed.errors ? `<span class="warn">⚠ ${computed.errors} tarea(s) con dependencias circulares</span>` : '');
   }
@@ -121,11 +120,61 @@ const App = (() => {
     Store.mutate(p => { if (idx.length === 1) { p.tasks[idx[0]].predecessors = []; for (const t of p.tasks) t.predecessors = t.predecessors.filter(x => !ids.has(x.id)); } else for (const i of idx) p.tasks[i].predecessors = p.tasks[i].predecessors.filter(x => !ids.has(x.id)); });
   }
   function setProgress(v) { const idx = Store.selectedIndices(); if (!idx.length) return; Store.mutate(p => { for (const i of idx) if (!Store.computed.outline.isSummary[i]) p.tasks[i].progress = v; else for (let j = i + 1; j < Store.blockEnd(i); j++) p.tasks[j].progress = v; }); }
-  function saveBaseline() {
-    Store.mutate(p => { const C = Store.computed.C; p.tasks.forEach((t, i) => { t.baseline = { start: U.fromDay(C[i].es), finish: U.fromDay(C[i].ef) }; }); p.baselineDate = U.fromDay(U.today()); });
-    options.baseline = true; $('chkBaseline').checked = true; refresh(); toast('Línea base guardada');
+  // ---------- líneas base ----------
+  function setBaselineView(show, compare) {
+    options.blShow = [...new Set(show.map(Number))].sort((a, b) => a - b); Store.setPref('blShow', options.blShow);
+    if (compare != null) { options.blCompare = +compare; Store.setPref('blCompare', options.blCompare); }
+    Table.renderHead(); refresh();
   }
-  function clearBaseline() { if (!confirm('¿Borrar la línea base del proyecto?')) return; Store.mutate(p => { p.tasks.forEach(t => { t.baseline = null; }); p.baselineDate = null; }); toast('Línea base borrada'); }
+  /** Guarda la planificación actual en la línea base k (todo el proyecto o solo las tareas seleccionadas) */
+  function saveBaseline(k = 0, onlySelected = false) {
+    const idx = onlySelected ? Store.selectedIndices() : null;
+    if (onlySelected && !idx.length) { toast('No hay tareas seleccionadas'); return false; }
+    const exists = Store.project.baselines[k];
+    if (exists && !onlySelected && !confirm(`«${Store.BL.name(k)}» ya está guardada. ¿Quieres sobrescribirla?`)) return false;
+    Store.mutate(p => {
+      const C = Store.computed.C; const set = idx ? new Set(idx) : null;
+      p.tasks.forEach((t, i) => { if (set && !set.has(i)) return; t.baselines = t.baselines || {}; t.baselines[k] = { start: U.fromDay(C[i].es), finish: U.fromDay(C[i].ef) }; });
+      p.baselines[k] = { date: U.fromDay(U.today()) };
+    });
+    if (!options.blShow.includes(+k)) setBaselineView([...options.blShow, +k]);
+    toast(`${Store.BL.name(k)} guardada${onlySelected ? ` para ${idx.length} tarea(s)` : ''}`);
+    return true;
+  }
+  function clearBaseline(k) {
+    if (!confirm(`¿Borrar «${Store.BL.name(k)}»?`)) return false;
+    Store.mutate(p => { p.tasks.forEach(t => { if (t.baselines) delete t.baselines[k]; }); delete p.baselines[k]; });
+    const rest = Store.BL.saved();
+    setBaselineView(options.blShow.filter(x => x !== +k), options.blCompare === +k ? (rest[0] ?? 0) : null);
+    toast(`${Store.BL.name(k)} borrada`);
+    return true;
+  }
+  function openBaselines() {
+    const dlg = $('dlgBaselines'); const tb = $('blTable').querySelector('tbody');
+    $('blScope').value = Store.selection.length > 1 ? $('blScope').value : 'all';
+    const draw = () => {
+      const p = Store.project; let html = '';
+      for (let k = 0; k <= Store.BL.MAX; k++) {
+        const b = p.baselines[k]; const n = b ? p.tasks.filter(t => t.baselines && t.baselines[k]).length : 0;
+        html += `<tr data-k="${k}"><td><input type="checkbox" class="bl-show" ${options.blShow.includes(k) ? 'checked' : ''} ${b ? '' : 'disabled'}></td>`
+          + `<td><input type="radio" name="blCompare" class="bl-cmp" ${options.blCompare === k ? 'checked' : ''}></td>`
+          + `<td><span style="display:inline-block;width:18px;height:6px;background:${Store.BL.COLORS[k]};vertical-align:middle;margin-right:6px;border-radius:1px"></span>${b ? '<b>' : ''}${Store.BL.name(k)}${b ? '</b>' : ''}</td>`
+          + `<td>${b ? (b.date ? U.fmt(U.toDay(b.date)) : 'sí') : '<span class="hint">sin guardar</span>'}</td><td>${b ? n : ''}</td>`
+          + `<td style="white-space:nowrap"><button type="button" class="secondary bl-save">${b ? 'Actualizar' : 'Establecer'}</button> ${b ? '<button type="button" class="link bl-del">Borrar</button>' : ''}</td></tr>`;
+      }
+      tb.innerHTML = html;
+      tb.querySelectorAll('tr').forEach(tr => {
+        const k = +tr.dataset.k;
+        tr.querySelector('.bl-show').onchange = e => setBaselineView(e.target.checked ? [...options.blShow, k] : options.blShow.filter(x => x !== k));
+        tr.querySelector('.bl-cmp').onchange = () => setBaselineView(options.blShow, k);
+        tr.querySelector('.bl-save').onclick = () => { if (saveBaseline(k, $('blScope').value === 'sel')) draw(); };
+        const del = tr.querySelector('.bl-del'); if (del) del.onclick = () => { if (clearBaseline(k)) draw(); };
+      });
+    };
+    draw();
+    dlg.querySelector('form').onsubmit = ev => { ev.preventDefault(); dlg.close(); };
+    dlg.showModal();
+  }
   function setCollapsedAll(v) { Store.mutate(p => { const ol = Store.computed.outline; p.tasks.forEach((t, i) => { if (ol.isSummary[i]) t.collapsed = v; }); }); }
   function scrollToSelected() { const idx = Store.selectedIndices(); if (!idx.length) return; Gantt.scrollToTask(idx[0]); Table.scrollToRow(idx[0]); }
 
@@ -187,7 +236,7 @@ const App = (() => {
     $('tComputed').innerHTML = `<span>Comienzo temprano <b>${U.fmt(c.es)}</b></span><span>Fin temprano <b>${U.fmt(c.ef)}</b></span><span>${c.critical ? '<b style="color:#d93025">● Tarea crítica</b>' : ''}</span>`
       + `<span>Comienzo límite <b>${U.fmt(c.ls)}</b></span><span>Fin límite <b>${U.fmt(c.lf)}</b></span><span>Holgura total <b>${c.slack} d</b> · libre <b>${c.freeSlack} d</b></span>`
       + (withCal.length && !t.ignoreResourceCalendars ? `<span style="grid-column:1/-1">Calendario personal de: ${U.esc(withCal.join(', '))}</span>` : '')
-      + (t.baseline ? `<span style="grid-column:1/-1">Línea base ${U.fmt(U.toDay(t.baseline.start))} → ${U.fmt(U.toDay(t.baseline.finish))}</span>` : '');
+      + Store.BL.saved().map(k => { const b = Store.BL.of(t, k); return b ? `<span style="grid-column:1/-1"><span style="display:inline-block;width:12px;height:5px;background:${Store.BL.COLORS[k]};vertical-align:middle;margin-right:4px"></span>${Store.BL.name(k)}: ${U.fmt(U.toDay(b.start))} → ${U.fmt(U.toDay(b.finish))}</span>` : ''; }).join('');
     const tb = $('tPredTable').querySelector('tbody');
     const candidates = project.tasks.map((x, k) => ({ x, k })).filter(({ x, k }) => k !== i && !Store.isAncestor(k, i) && !Store.isAncestor(i, k));
     const predRow = (p = { id: candidates[0] && candidates[0].x.id, type: 'FS', lag: 0 }) => {
@@ -294,11 +343,13 @@ const App = (() => {
     const w = leaves.reduce((s, i) => s + Math.max(Scheduler.dur(project.tasks[i]), 1), 0) || 1;
     const done = Math.round(leaves.reduce((s, i) => s + (+project.tasks[i].progress || 0) * Math.max(Scheduler.dur(project.tasks[i]), 1), 0) / w);
     let bl = null;
-    if (project.baselineDate) { const bs = Math.min(...project.tasks.filter(t => t.baseline).map(t => U.toDay(t.baseline.start))); const bf = Math.max(...project.tasks.filter(t => t.baseline).map(t => U.toDay(t.baseline.finish))); bl = { bs, bf, dur: cal.duration(bs, bf) }; }
+    const blk = options.blCompare; const withBl = project.tasks.map(t => Store.BL.of(t, blk)).filter(Boolean);
+    if (withBl.length) { const bs = Math.min(...withBl.map(b => U.toDay(b.start))); const bf = Math.max(...withBl.map(b => U.toDay(b.finish))); bl = { bs, bf, dur: cal.duration(bs, bf) }; }
+    const vd = (a, b) => { const v = b >= a ? cal.count(a, b) : -cal.count(b, a); return (v > 0 ? '+' : '') + v + ' d'; };
     const row = (h, a, b, c) => `<div class="h">${h}</div><div>${a}</div><div>${b ?? ''}</div><div>${c ?? ''}</div>`;
-    $('statsBody').innerHTML = `<div class="stats">${row('', '<b>Actual</b>', '<b>Línea base</b>', '<b>Variación</b>')}`
-      + row('Comienzo', U.fmt(computed.projStart), bl ? U.fmt(bl.bs) : '—', bl ? cal.count(bl.bs, computed.projStart) + ' d' : '')
-      + row('Fin', U.fmt(computed.projFinish), bl ? U.fmt(bl.bf) : '—', bl ? cal.count(bl.bf, computed.projFinish) + ' d' : '')
+    $('statsBody').innerHTML = `<div class="stats">${row('', '<b>Actual</b>', `<b>${Store.BL.name(blk)}</b>`, '<b>Variación</b>')}`
+      + row('Comienzo', U.fmt(computed.projStart), bl ? U.fmt(bl.bs) : '—', bl ? vd(bl.bs, computed.projStart) : '')
+      + row('Fin', U.fmt(computed.projFinish), bl ? U.fmt(bl.bf) : '—', bl ? vd(bl.bf, computed.projFinish) : '')
       + row('Duración', computed.duration + ' d', bl ? bl.dur + ' d' : '—', bl ? (computed.duration - bl.dur) + ' d' : '')
       + `</div><hr><div class="stats" style="grid-template-columns:auto 1fr">`
       + `<div class="h">Tareas</div><div>${leaves.length} (${project.tasks.length - leaves.length} resúmenes, ${project.tasks.filter(t => t.milestone).length} hitos)</div>`
@@ -379,7 +430,9 @@ const App = (() => {
     Store.load();
     Table.init(); Gantt.init(); Timeline.init(); ResourceView.init();
     Store.subscribe(refresh);
-    ['critical', 'slack', 'baseline', 'path', 'timeline', 'names'].forEach(k => { const el = $('chk' + k[0].toUpperCase() + k.slice(1)); el.checked = Store.getPref('opt.' + k, options[k]); options[k] = el.checked; el.onchange = () => { options[k] = el.checked; Store.setPref('opt.' + k, el.checked); refresh(); }; });
+    options.blShow = (Store.getPref('blShow', null) || (Store.getPref('opt.baseline', false) ? [0] : [])).map(Number);
+    options.blCompare = +Store.getPref('blCompare', 0) || 0;
+    ['critical', 'slack', 'path', 'timeline', 'names', 'resNames'].forEach(k => { const el = $('chk' + k[0].toUpperCase() + k.slice(1)); el.checked = Store.getPref('opt.' + k, options[k]); options[k] = el.checked; el.onchange = () => { options[k] = el.checked; Store.setPref('opt.' + k, el.checked); refresh(); }; });
     Gantt.setPxDay(Store.getPref('pxDay', 12));
 
     document.querySelectorAll('#ribbonTabs button[data-tab]').forEach(b => b.onclick = () => showRibbonTab(b.dataset.tab));
@@ -395,7 +448,7 @@ const App = (() => {
     $('btnUp').onclick = () => move(-1); $('btnDown').onclick = () => move(1);
     $('btnLink').onclick = linkSelected; $('btnUnlink').onclick = unlinkSelected;
     [0, 25, 50, 75, 100].forEach(v => $('btnPct' + v).onclick = () => setProgress(v));
-    $('btnBaseline').onclick = saveBaseline; $('btnClearBaseline').onclick = clearBaseline; $('btnStats').onclick = openStats;
+    $('btnBaseline').onclick = openBaselines; $('btnBaselinesView').onclick = openBaselines; $('btnStats').onclick = openStats;
     $('zoom').onchange = e => { Gantt.setZoom(e.target.value); Gantt.scrollToDay(Store.computed.projStart); };
     $('zoomSlider').oninput = e => { Gantt.setPxDay(+e.target.value); Store.setPref('pxDay', +e.target.value); };
     $('btnZoomIn').onclick = () => Gantt.zoomBy(1.25); $('btnZoomOut').onclick = () => Gantt.zoomBy(0.8); $('btnFit').onclick = () => Gantt.fit();
@@ -433,5 +486,5 @@ const App = (() => {
   }
 
   document.addEventListener('DOMContentLoaded', init);
-  return { options, filter, refresh, visibleRows, toast, setStatusHint, syncZoomUI, addTask, addSummary, deleteSelected, indent, move, addLink, linkSelected, unlinkSelected, setProgress, saveBaseline, openTaskDialog, openResources, openSettings, openResourceCalendar, showContextMenu, hideContextMenu, setView };
+  return { options, filter, refresh, visibleRows, toast, setStatusHint, syncZoomUI, addTask, addSummary, deleteSelected, indent, move, addLink, linkSelected, unlinkSelected, setProgress, saveBaseline, clearBaseline, openBaselines, setBaselineView, openTaskDialog, openResources, openSettings, openResourceCalendar, showContextMenu, hideContextMenu, setView };
 })();

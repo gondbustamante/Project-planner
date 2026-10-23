@@ -10,7 +10,7 @@ const Store = (() => {
     return {
       id: U.uid(), name: o.name ?? 'Nueva tarea', level: o.level ?? 1, duration: o.duration ?? (o.milestone ? 0 : 5),
       milestone: !!o.milestone, progress: o.progress ?? 0, predecessors: o.predecessors ?? [], resources: o.resources ?? [],
-      constraint: o.constraint ?? { type: 'ASAP', date: null }, notes: o.notes ?? '', collapsed: false, baseline: o.baseline ?? null, ignoreResourceCalendars: !!o.ignoreResourceCalendars, deadline: o.deadline ?? null, priority: o.priority ?? 500,
+      constraint: o.constraint ?? { type: 'ASAP', date: null }, notes: o.notes ?? '', collapsed: false, baselines: o.baselines ?? {}, ignoreResourceCalendars: !!o.ignoreResourceCalendars, deadline: o.deadline ?? null, priority: o.priority ?? 500,
       start: null, finish: null
     };
   }
@@ -18,7 +18,7 @@ const Store = (() => {
     return { id: U.uid(), name: o.name ?? 'Responsable', role: o.role ?? '', color: o.color ?? U.PALETTE[(project ? project.resources.length : 0) % U.PALETTE.length], calendar: o.calendar ?? null };
   }
   function blank(name) {
-    return { version: 2, id: U.uid(), name: name || 'Nuevo proyecto', start: U.fromDay(U.today()), statusDate: null, notes: '', calendar: { workDays: [1, 2, 3, 4, 5], exceptions: [] }, resources: [], tasks: [], baselineDate: null, modified: Date.now() };
+    return { version: 2, id: U.uid(), name: name || 'Nuevo proyecto', start: U.fromDay(U.today()), statusDate: null, notes: '', calendar: { workDays: [1, 2, 3, 4, 5], exceptions: [] }, resources: [], tasks: [], baselines: {}, modified: Date.now() };
   }
   function normalize(p) {
     const b = blank();
@@ -27,7 +27,19 @@ const Store = (() => {
     if (!Array.isArray(p.resources)) p.resources = [];
     if (!Array.isArray(p.tasks)) p.tasks = [];
     p.resources = p.resources.map(r => { const x = Object.assign(newResource(), r); x.calendar = x.calendar ? normalizeCalendar(x.calendar, false) : null; return x; });
-    p.tasks = p.tasks.map(t => Object.assign(newTask(), t));
+    p.tasks = p.tasks.map(t => {
+      const x = Object.assign(newTask(), t);
+      // Migración: una única línea base (formato anterior) pasa a ser la «Línea base» (número 0)
+      if (!x.baselines || typeof x.baselines !== 'object') x.baselines = {};
+      if (x.baseline && !x.baselines[0]) x.baselines[0] = x.baseline;
+      delete x.baseline;
+      return x;
+    });
+    if (!p.baselines || typeof p.baselines !== 'object') p.baselines = {};
+    if (p.baselineDate && !p.baselines[0]) p.baselines[0] = { date: p.baselineDate };
+    delete p.baselineDate;
+    // Si hay datos de una línea base pero no su registro, se crea
+    for (const t of p.tasks) for (const k of Object.keys(t.baselines)) if (!p.baselines[k]) p.baselines[k] = { date: null };
     if (U.toDay(p.start) == null) p.start = U.fromDay(U.today());
     if (!p.id) p.id = U.uid();
     return p;
@@ -150,7 +162,18 @@ const Store = (() => {
   function blockEnd(i) { const tasks = project.tasks; let j = i + 1; while (j < tasks.length && tasks[j].level > tasks[i].level) j++; return j; }
   function isAncestor(a, b) { const ol = computed.outline; let p = ol.parent[b]; while (p >= 0) { if (p === a) return true; p = ol.parent[p]; } return false; }
 
+  // ---- líneas base (0 = «Línea base», 1..10 = «Línea base 1»…«Línea base 10», como en Project) ----
+  const BL = {
+    MAX: 10,
+    COLORS: ['#9ca3af', '#f59e0b', '#10b981', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1', '#14b8a6', '#a16207'],
+    name: k => +k === 0 ? 'Línea base' : `Línea base ${k}`,
+    short: k => +k === 0 ? 'LB' : `LB${k}`,
+    saved: () => Object.keys(project.baselines || {}).map(Number).sort((a, b) => a - b),
+    of: (t, k) => (t.baselines && t.baselines[k]) || null,
+  };
+
   return {
+    BL,
     get project() { return project; }, get computed() { return computed; }, get selection() { return selection; },
     get canUndo() { return undoStack.length > 0; }, get canRedo() { return redoStack.length > 0; }, get saved() { return saved; },
     listProjects, openProject, deleteProject, createProject, setPref, getPref,

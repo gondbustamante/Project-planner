@@ -7,6 +7,7 @@ const Gantt = (() => {
   let range = { start: 0, end: 1 };
   let rowsCache = [];
   let drag = null;
+  let MID = 14; // centro vertical de la barra dentro de la fila (se sube cuando se muestran líneas base)
 
   const x = d => Math.round((d - range.start) * pxDay * 10) / 10;
   const tier = () => pxDay >= 20 ? 'day' : pxDay >= 6 ? 'week' : pxDay >= 2.2 ? 'month' : 'quarter';
@@ -49,7 +50,8 @@ const Gantt = (() => {
   function computeRange(rows) {
     const { computed, project } = Store; const C = computed.C;
     let lo = computed.projStart, hi = computed.projFinish;
-    for (const i of rows) { const t = project.tasks[i]; if (t.baseline) { const bs = U.toDay(t.baseline.start), bf = U.toDay(t.baseline.finish); if (bs != null) lo = Math.min(lo, bs); if (bf != null) hi = Math.max(hi, bf); } if (t.deadline) hi = Math.max(hi, U.toDay(t.deadline)); lo = Math.min(lo, C[i].es); hi = Math.max(hi, C[i].ef); }
+    const shown = shownBaselines();
+    for (const i of rows) { const t = project.tasks[i]; for (const k of shown) { const b = Store.BL.of(t, k); if (!b) continue; const bs = U.toDay(b.start), bf = U.toDay(b.finish); if (bs != null) lo = Math.min(lo, bs); if (bf != null) hi = Math.max(hi, bf); } if (t.deadline) hi = Math.max(hi, U.toDay(t.deadline)); lo = Math.min(lo, C[i].es); hi = Math.max(hi, C[i].ef); }
     const td = U.today(); lo = Math.min(lo, td); hi = Math.max(hi, td);
     const pad = Math.ceil(60 / pxDay);
     lo -= pad; hi += pad * 2;
@@ -93,6 +95,9 @@ const Gantt = (() => {
     return { preds, succs, sel: new Set(selection) };
   }
 
+  /** Líneas base que se dibujan: las marcadas en «Mostrar» que existen en el proyecto */
+  function shownBaselines() { const saved = new Set(Store.BL.saved()); return (App.options.blShow || []).filter(k => saved.has(+k)).map(Number).sort((a, b) => a - b); }
+
   // ---------- cuerpo ----------
   function bodySVG(rows, opts) {
     const { project, computed } = Store; const tasks = project.tasks, C = computed.C, ol = computed.outline, cal = computed.cal;
@@ -103,6 +108,10 @@ const Gantt = (() => {
     const path = taskPath();
     let bg = '', bars = '', deps = '', labels = '', over = '';
     const t = tier();
+    // Geometría de la fila: con líneas base visibles la barra sube y deja debajo una franja para ellas
+    const shown = shownBaselines();
+    const BY = shown.length ? 4 : 7, BH = shown.length ? 13 : 14; MID = BY + BH / 2;
+    const BLY = BY + BH + 1, BLH = shown.length ? Math.max(1.5, Math.min(4, (ROW - BLY - 1 - (shown.length - 1)) / shown.length)) : 0;
 
     for (let k = 0; k < rows.length; k++) {
       bg += `<rect class="row-sel" data-sel="${tasks[rows[k]].id}" x="0" y="${k * ROW}" width="${width}" height="${ROW}" visibility="${sel.has(tasks[rows[k]].id) ? 'visible' : 'hidden'}"/>`;
@@ -128,24 +137,28 @@ const Gantt = (() => {
       const tip = `<title>${U.esc(tk.name)}\n${U.fmt(c.es)} → ${U.fmt(c.ef)} · ${tk.milestone ? 'hito' : tk.duration + ' días'}${sum ? '' : ' · holgura ' + c.slack + ' d'}${tk.progress ? ' · ' + tk.progress + '%' : ''}${tk.resources.length ? '\n' + tk.resources.map(id => (resById.get(id) || {}).name).filter(Boolean).join(', ') : ''}</title>`;
       let g = `<g class="task-row" data-id="${tk.id}" data-i="${i}">`;
       g += `<rect class="row-hover" x="0" y="${y}" width="${width}" height="${ROW}" fill="transparent"/>`;
-      if (opts.baseline && tk.baseline && !sum) {
-        const bs = U.toDay(tk.baseline.start), bf = U.toDay(tk.baseline.finish);
-        if (bs != null && bf != null) g += `<rect x="${x(bs)}" y="${y + 21}" width="${Math.max(x(bf + 1) - x(bs), 2)}" height="4" rx="1" fill="#9ca3af"><title>Línea base: ${U.fmt(bs)} → ${U.fmt(bf)}</title></rect>`;
-      }
+      shown.forEach((k, n) => {
+        const b = Store.BL.of(tk, k); if (!b) return;
+        const bs = U.toDay(b.start), bf = U.toDay(b.finish); if (bs == null || bf == null) return;
+        const by = y + BLY + n * (BLH + 1), col = Store.BL.COLORS[k];
+        const tipB = `<title>${Store.BL.name(k)}: ${U.fmt(bs)} → ${U.fmt(bf)}</title>`;
+        if (bs === bf && tk.milestone) { const cx = x(bs) + pxDay / 2, r = Math.max(BLH, 2.5); g += `<polygon points="${cx},${by - r / 2} ${cx + r},${by + BLH / 2} ${cx},${by + BLH + r / 2} ${cx - r},${by + BLH / 2}" fill="${col}">${tipB}</polygon>`; }
+        else g += `<rect x="${x(bs)}" y="${by}" width="${Math.max(x(bf + 1) - x(bs), 2)}" height="${BLH}" fill="${col}">${tipB}</rect>`;
+      });
       if (opts.slack && !sum && c.slack > 0 && c.lf > c.ef) {
-        g += `<line x1="${x2}" y1="${y + ROW / 2}" x2="${x(c.lf + 1)}" y2="${y + ROW / 2}" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="3 2"/><line x1="${x(c.lf + 1)}" y1="${y + 8}" x2="${x(c.lf + 1)}" y2="${y + ROW - 8}" stroke="#6b7280" stroke-width="1.5"/>`;
+        g += `<line x1="${x2}" y1="${y + MID}" x2="${x(c.lf + 1)}" y2="${y + MID}" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="3 2"/><line x1="${x(c.lf + 1)}" y1="${y + MID - 6}" x2="${x(c.lf + 1)}" y2="${y + MID + 6}" stroke="#6b7280" stroke-width="1.5"/>`;
       }
       if (sum) {
-        const cy = y + 8;
+        const cy = y + BY + 1;
         g += `<path d="M${x1} ${cy - 3} H${x2} V${cy + 4} L${x2 - 5} ${cy + 10} L${x2 - 10} ${cy + 4} H${x1 + 10} L${x1 + 5} ${cy + 10} L${x1} ${cy + 4} Z" fill="${color}">${tip}</path>`;
         if (tk.progress > 0) g += `<rect x="${x1}" y="${cy - 1}" width="${Math.max(w * Math.min(tk.progress, 100) / 100, 0)}" height="3" fill="#9ca3af"/>`;
       } else if (tk.milestone) {
-        const cx = x1 + pxDay / 2, cy = y + ROW / 2, r = 7;
+        const cx = x1 + pxDay / 2, cy = y + MID, r = 7;
         g += `<polygon class="bar" points="${cx},${cy - r} ${cx + r},${cy} ${cx},${cy + r} ${cx - r},${cy}" fill="${crit ? '#d93025' : (path && !path.sel.has(tk.id) && !path.preds.has(tk.id) && !path.succs.has(tk.id)) ? '#9ca3af' : '#111827'}"${stroke}>${tip}</polygon>`;
         g += `<circle class="link-handle" data-end="start" cx="${cx - r - 6}" cy="${cy}" r="4"><title>Arrastra desde el comienzo</title></circle>`;
         g += `<circle class="link-handle" data-end="finish" cx="${cx + r + 6}" cy="${cy}" r="4"><title>Arrastra desde el fin</title></circle>`;
       } else {
-        const by = y + 7, bh = 14;
+        const by = y + BY, bh = BH;
         g += `<rect class="bar" x="${x1}" y="${by}" width="${w}" height="${bh}" rx="2" fill="${color}"${stroke}>${tip}</rect>`;
         if (tk.progress > 0) g += `<rect class="bar" x="${x1 + 1}" y="${by + 5}" width="${Math.max((w - 2) * Math.min(tk.progress, 100) / 100, 0)}" height="${bh - 10}" rx="1" fill="rgba(0,0,0,.45)"/>`;
         g += `<rect class="bar-resize" x="${x1 + w - 6}" y="${by}" width="8" height="${bh}"/>`;
@@ -153,13 +166,15 @@ const Gantt = (() => {
         g += `<circle class="link-handle" data-end="finish" cx="${x1 + w + 7}" cy="${by + bh / 2}" r="4"><title>Arrastra desde el fin</title></circle>`;
       }
       if (tk.deadline) { const dd = U.toDay(tk.deadline); const dx = x(dd) + pxDay / 2; over += `<path d="M${dx - 5} ${y + 4} h10 l-5 8 z" fill="${c.deadlineMissed ? '#d93025' : '#16a34a'}"><title>Fecha límite ${U.fmt(dd)}${c.deadlineMissed ? ' · superada' : ''}</title></path>`; }
+      // Etiqueta junto a la barra: nombre (opcional) y responsables (opcional); los hitos siempre muestran nombre y fecha
       const parts = [];
-      if (opts.names || sum) parts.push(tk.name);
-      if (!sum) parts.push(...tk.resources.map(id => (resById.get(id) || {}).name).filter(Boolean));
-      const lbl = sum ? (opts.names ? tk.name : '') : parts.join(', ');
+      if (tk.milestone) parts.push(`${tk.name} · ${U.fmt(c.es)}`);
+      else if (opts.names) parts.push(tk.name);
+      if (!sum && opts.resNames) parts.push(...tk.resources.map(id => (resById.get(id) || {}).name).filter(Boolean));
+      const lbl = parts.join(', ');
       const lx = tk.milestone ? x1 + pxDay / 2 + 16 : x2 + 14;
-      if (lbl) labels += `<text x="${lx}" y="${y + ROW / 2 + 4}" fill="#374151">${U.esc(lbl)}</text>`;
-      if (tk.milestone && !opts.names) labels += `<text x="${lx + (lbl ? lbl.length * 6.2 + 8 : 0)}" y="${y + ROW / 2 + 4}" fill="#374151">${U.esc(tk.name)} · ${U.fmt(c.es)}</text>`;
+      const ly = y + (sum ? BY + 5 : MID) + 4;
+      if (lbl) labels += `<text x="${lx}" y="${ly}" fill="#374151">${U.esc(lbl)}</text>`;
       g += '</g>';
       bars += g;
     }
@@ -174,8 +189,8 @@ const Gantt = (() => {
         else if (opts.critical && pc.critical && sc.critical) cls += ' critical';
         const fromRight = p.type === 'FS' || p.type === 'FF', toLeft = p.type === 'FS' || p.type === 'SS';
         const pm = tasks[pi].milestone ? pxDay / 2 - 7 : 0, sm = tk.milestone ? pxDay / 2 - 7 : 0;
-        const sx = fromRight ? x(pc.ef + 1) - pm : x(pc.es) + pm; const sy = yOf.get(pi) + (ol.isSummary[pi] ? 8 : ROW / 2);
-        const ex = toLeft ? x(sc.es) + sm : x(sc.ef + 1) - sm; const ey = yOf.get(i) + (ol.isSummary[i] ? 8 : ROW / 2);
+        const sx = fromRight ? x(pc.ef + 1) - pm : x(pc.es) + pm; const sy = yOf.get(pi) + (ol.isSummary[pi] ? BY + 1 : MID);
+        const ex = toLeft ? x(sc.es) + sm : x(sc.ef + 1) - sm; const ey = yOf.get(i) + (ol.isSummary[i] ? BY + 1 : MID);
         let d; const down = ey > sy;
         if (toLeft) {
           const h = fromRight ? sx + 7 : sx - 7;
@@ -234,7 +249,7 @@ const Gantt = (() => {
     const xs = t.milestone ? x(c.es) + pxDay / 2 - 7 : x(c.es), xf = t.milestone ? x(c.es) + pxDay / 2 + 7 : x(c.ef + 1);
     let end = el.dataset && el.dataset.end;
     if (end !== 'start' && end !== 'finish') end = px < (xs + xf) / 2 ? 'start' : 'finish';
-    return { id: g.dataset.id, i, end, px: end === 'start' ? xs : xf, py: y + (sum ? 8 : ROW / 2) };
+    return { id: g.dataset.id, i, end, px: end === 'start' ? xs : xf, py: y + (sum ? MID - 6 : MID) };
   }
   function onDown(e) {
     if (e.button !== 0) return;
@@ -303,5 +318,5 @@ const Gantt = (() => {
     }
   }
 
-  return { init, render, updateSelection, setZoom, setPxDay, zoomBy, fit, scrollToDay, scrollToTask, exportSVG, ROW, HEAD, tier, get pxDay() { return pxDay; }, get range() { return range; } };
+  return { shownBaselines, init, render, updateSelection, setZoom, setPxDay, zoomBy, fit, scrollToDay, scrollToTask, exportSVG, ROW, HEAD, tier, get pxDay() { return pxDay; }, get range() { return range; } };
 })();

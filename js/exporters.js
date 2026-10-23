@@ -14,11 +14,12 @@ const Exporters = (() => {
     const { project, computed } = Store; const C = computed.C, ol = computed.outline;
     const resById = new Map(project.resources.map(r => [r.id, r]));
     const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
-    const rows = [['Id', 'EDT', 'Nivel', 'Nombre', 'Duración (días)', 'Comienzo', 'Fin', 'Predecesoras', 'Sucesoras', 'Responsables', '% completado', 'Hito', 'Resumen', 'Crítica', 'Holgura total (días)', 'Holgura libre (días)', 'Comienzo límite', 'Fin límite', 'Fecha límite', 'Restricción', 'Comienzo LB', 'Fin LB', 'Notas']];
+    const bls = Store.BL.saved();
+    const rows = [['Id', 'EDT', 'Nivel', 'Nombre', 'Duración (días)', 'Comienzo', 'Fin', 'Predecesoras', 'Sucesoras', 'Responsables', '% completado', 'Hito', 'Resumen', 'Crítica', 'Holgura total (días)', 'Holgura libre (días)', 'Comienzo límite', 'Fin límite', 'Fecha límite', 'Restricción', ...bls.flatMap(k => [`Comienzo ${Store.BL.short(k)}`, `Fin ${Store.BL.short(k)}`]), 'Notas']];
     project.tasks.forEach((t, i) => rows.push([i + 1, ol.wbs[i], t.level, t.name, t.duration, U.fmt(C[i].es), U.fmt(C[i].ef), Table.predsToText(t), Table.linkText(computed.successors[i]),
       t.resources.map(id => (resById.get(id) || {}).name).filter(Boolean).join(', '), t.progress || 0, t.milestone ? 'Sí' : 'No', ol.isSummary[i] ? 'Sí' : 'No', C[i].critical ? 'Sí' : 'No', C[i].slack, C[i].freeSlack, U.fmt(C[i].ls), U.fmt(C[i].lf),
       t.deadline ? U.fmt(U.toDay(t.deadline)) : '', t.constraint && t.constraint.type !== 'ASAP' && t.constraint.date ? `${Table.CONS_LABEL[t.constraint.type]} ${U.fmt(U.toDay(t.constraint.date))}` : '',
-      t.baseline ? U.fmt(U.toDay(t.baseline.start)) : '', t.baseline ? U.fmt(U.toDay(t.baseline.finish)) : '', t.notes]));
+      ...bls.flatMap(k => { const bl = Store.BL.of(t, k); return bl ? [U.fmt(U.toDay(bl.start)), U.fmt(U.toDay(bl.finish))] : ['', '']; }), t.notes]));
     U.download(U.safeName(project.name) + '.csv', '﻿' + rows.map(r => r.map(q).join(';')).join('\r\n'), 'text/csv;charset=utf-8');
   }
 
@@ -58,7 +59,7 @@ const Exporters = (() => {
       if (t.deadline) x += `<Deadline>${T17(t.deadline)}</Deadline>`;
       x += `<Priority>${t.priority || 500}</Priority>`;
       if (t.ignoreResourceCalendars) x += `<IgnoreResourceCalendar>1</IgnoreResourceCalendar>`;
-      if (t.baseline) x += `<Baseline><Number>0</Number><Start>${T8(t.baseline.start)}</Start><Finish>${T17(t.baseline.finish)}</Finish></Baseline>`;
+      for (const k of Object.keys(t.baselines || {}).map(Number).sort((a, b) => a - b)) { const bl = t.baselines[k]; if (bl && U.toDay(bl.start) != null && U.toDay(bl.finish) != null) x += `<Baseline><Number>${k}</Number><Start>${T8(bl.start)}</Start><Finish>${T17(bl.finish)}</Finish></Baseline>`; }
       for (const p of t.predecessors) { const pu = uidOf.get(p.id); if (pu) x += `<PredecessorLink><PredecessorUID>${pu}</PredecessorUID><Type>${MSP_TYPE[p.type] ?? 1}</Type><CrossProject>0</CrossProject><LinkLag>${(p.lag | 0) * 4800}</LinkLag><LagFormat>7</LagFormat></PredecessorLink>`; }
       x += `</Task>`;
     });
@@ -99,7 +100,7 @@ const Exporters = (() => {
       <h1>${U.esc(project.name)}</h1>
       <div class="meta">Inicio ${U.fmt(computed.projStart)} · Fin ${U.fmt(computed.projFinish)} · ${computed.duration} días laborables · ${project.tasks.length} tareas · impreso el ${U.fmt(U.today())}</div>
       ${svg}
-      <div class="legend"><span><span class="sw" style="background:#3b7dd8"></span>Tarea</span><span><span class="sw" style="background:#d93025"></span>Tarea crítica</span><span><span class="sw" style="background:#2b2f36"></span>Resumen</span><span>◆ Hito</span>${App.options.baseline ? '<span><span class="sw" style="background:#9ca3af"></span>Línea base</span>' : ''}<span>▼ Fecha límite</span></div>
+      <div class="legend"><span><span class="sw" style="background:#3b7dd8"></span>Tarea</span><span><span class="sw" style="background:#d93025"></span>Tarea crítica</span><span><span class="sw" style="background:#2b2f36"></span>Resumen</span><span>◆ Hito</span>${Gantt.shownBaselines().map(k => `<span><span class="sw" style="background:${Store.BL.COLORS[k]}"></span>${Store.BL.name(k)}</span>`).join('')}<span>▼ Fecha límite</span></div>
       <script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script></body></html>`);
     w.document.close();
   }
@@ -171,7 +172,7 @@ const Exporters = (() => {
       const t = Store.newTask({ name: g(te, 'Name') || 'Tarea', level: lvl, duration: ms ? 0 : Math.max(1, dur), milestone: ms, progress: +g(te, 'PercentComplete') || 0, notes: g(te, 'Notes'), ignoreResourceCalendars: g(te, 'IgnoreResourceCalendar') === '1', deadline: U.toDay(g(te, 'Deadline')) != null ? U.fromDay(U.toDay(g(te, 'Deadline'))) : null, priority: +g(te, 'Priority') || 500 });
       const ct = +g(te, 'ConstraintType'), cd = U.toDay(g(te, 'ConstraintDate'));
       if (cd != null) { if (ct === 2) t.constraint = { type: 'MSO', date: U.fromDay(cd) }; else if (ct === 4 || ct === 6) t.constraint = { type: 'SNET', date: U.fromDay(cd) }; }
-      const bl = te.getElementsByTagName('Baseline')[0]; if (bl) { const bs = U.toDay(g(bl, 'Start')), bf = U.toDay(g(bl, 'Finish')); if (bs != null && bf != null) t.baseline = { start: U.fromDay(bs), finish: U.fromDay(bf) }; }
+      for (const bl of te.getElementsByTagName('Baseline')) { if (bl.parentNode !== te) continue; const k = parseInt(g(bl, 'Number'), 10) || 0; const bs = U.toDay(g(bl, 'Start')), bf = U.toDay(g(bl, 'Finish')); if (k >= 0 && k <= 10 && bs != null && bf != null) { t.baselines[k] = { start: U.fromDay(bs), finish: U.fromDay(bf) }; if (!p.baselines[k]) p.baselines[k] = { date: null }; } }
       uidMap.set(g(te, 'UID'), t.id);
       for (const pl of te.getElementsByTagName('PredecessorLink')) pending.push({ t, pu: g(pl, 'PredecessorUID'), type: MSP_TYPE_INV[+g(pl, 'Type')] || 'FS', lag: Math.round((+g(pl, 'LinkLag') || 0) / (minPerDay * 10)) });
       p.tasks.push(t);

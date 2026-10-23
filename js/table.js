@@ -70,8 +70,12 @@ const Table = (() => {
   }
 
   // ---------- cabecera ----------
+  function colLabel(c) {
+    const k = App.options.blCompare || 0, s = Store.BL.short(k);
+    return { blStart: `Comienzo ${s}`, blFinish: `Fin ${s}`, variance: `Variación fin (${s})` }[c.key] || c.label;
+  }
   function renderHead() {
-    head.innerHTML = '<tr>' + cols().map(c => `<th class="${c.cls.split(' ')[0]}" data-col="${c.key}" style="width:${widths[c.key] || c.w}px;position:sticky">${c.label}<span class="resizer" data-col="${c.key}"></span></th>`).join('') + '</tr>';
+    head.innerHTML = '<tr>' + cols().map(c => `<th class="${c.cls.split(' ')[0]}" data-col="${c.key}" style="width:${widths[c.key] || c.w}px;position:sticky">${colLabel(c)}<span class="resizer" data-col="${c.key}"></span></th>`).join('') + '</tr>';
   }
 
   function init() {
@@ -121,9 +125,9 @@ const Table = (() => {
       case 'lf': return U.fmt(c.lf);
       case 'deadline': return t.deadline ? U.fmt(U.toDay(t.deadline)) : '';
       case 'constraint': return sum ? '' : (t.constraint && t.constraint.type !== 'ASAP' && t.constraint.date ? `${CONS_LABEL[t.constraint.type]} ${U.fmt(U.toDay(t.constraint.date))}` : CONS_LABEL.ASAP);
-      case 'blStart': return t.baseline ? U.fmt(U.toDay(t.baseline.start)) : '';
-      case 'blFinish': return t.baseline ? U.fmt(U.toDay(t.baseline.finish)) : '';
-      case 'variance': { if (!t.baseline) return ''; const v = ctx.cal.count(U.toDay(t.baseline.finish), c.ef); return (v > 0 ? '+' : '') + v + ' d'; }
+      case 'blStart': { const b = Store.BL.of(t, ctx.blk); return b ? U.fmt(U.toDay(b.start)) : ''; }
+      case 'blFinish': { const b = Store.BL.of(t, ctx.blk); return b ? U.fmt(U.toDay(b.finish)) : ''; }
+      case 'variance': { const b = Store.BL.of(t, ctx.blk); if (!b) return ''; const f = U.toDay(b.finish); const v = c.ef >= f ? ctx.cal.count(f, c.ef) : -ctx.cal.count(c.ef, f); return (v > 0 ? '+' : '') + v + ' d'; }
       case 'priority': return PRIO[t.priority] || 'Normal';
       case 'notes': return U.esc((t.notes || '').split('\n')[0]);
     }
@@ -135,7 +139,7 @@ const Table = (() => {
     rowsCache = rows;
     const { project, computed, selection } = Store;
     const tasks = project.tasks, ol = computed.outline, C = computed.C;
-    const ctx = { ol, cal: computed.cal, successors: computed.successors, resById: new Map(project.resources.map(r => [r.id, r])) };
+    const ctx = { ol, cal: computed.cal, successors: computed.successors, resById: new Map(project.resources.map(r => [r.id, r])), blk: App.options.blCompare || 0 };
     const sel = new Set(selection); const cs = cols();
     let html = '';
     for (const i of rows) {
