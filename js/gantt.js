@@ -1,15 +1,15 @@
-/* Diagrama de Gantt en SVG: escala temporal, barras, hitos, resúmenes, dependencias, línea base e interacción */
+/* Diagrama de Gantt en SVG: escala temporal de dos niveles, barras, dependencias, holgura, línea base, fecha límite, ruta de tareas e interacción */
 const Gantt = (() => {
-  const ROW = 30, HEAD = 48;
-  const PX = { day: 36, week: 14, month: 4.5 };
-  let zoom = 'week', pxDay = PX.week;
+  const ROW = 28, HEAD = 46;
+  const PRESET = { day: 30, week: 12, month: 4, quarter: 1.6 };
+  let pxDay = 12;
   let headerEl, bodyEl, pane;
   let range = { start: 0, end: 1 };
   let rowsCache = [];
   let drag = null;
 
   const x = d => Math.round((d - range.start) * pxDay * 10) / 10;
-  const dayAt = px => Math.floor(px / pxDay) + range.start;
+  const tier = () => pxDay >= 20 ? 'day' : pxDay >= 6 ? 'week' : pxDay >= 2.2 ? 'month' : 'quarter';
 
   function init() {
     headerEl = document.getElementById('ganttHeader');
@@ -17,128 +17,175 @@ const Gantt = (() => {
     pane = document.getElementById('ganttPane');
     bodyEl.addEventListener('mousedown', onDown);
     bodyEl.addEventListener('dblclick', e => { const g = e.target.closest('[data-id]'); if (g) App.openTaskDialog(g.dataset.id); });
+    bodyEl.addEventListener('contextmenu', e => { e.preventDefault(); const g = e.target.closest('g[data-id]'); if (g && !Store.selection.includes(g.dataset.id)) Table.setActive(+g.dataset.i, 'name'); App.showContextMenu(e.clientX, e.clientY, g ? g.dataset.id : null); });
+    pane.addEventListener('wheel', e => { if (e.ctrlKey) { e.preventDefault(); zoomBy(e.deltaY < 0 ? 1.2 : 1 / 1.2, e.clientX); } }, { passive: false });
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   }
-  function setZoom(z) { zoom = z; pxDay = PX[z] || PX.week; }
+  function setZoom(z) { if (PRESET[z]) setPxDay(PRESET[z]); }
+  function setPxDay(v, anchorDay) {
+    const old = pxDay; pxDay = U.clamp(v, 1, 60);
+    if (old === pxDay) return;
+    Store.setPref('pxDay', pxDay);
+    const keep = anchorDay != null ? anchorDay : (pane ? pane.scrollLeft / old + range.start : null);
+    App.refresh();
+    if (keep != null) pane.scrollLeft = Math.max(0, (keep - range.start) * pxDay - (anchorDay != null ? 0 : 0));
+    App.syncZoomUI();
+  }
+  function zoomBy(f, clientX) {
+    let anchor = null;
+    if (clientX != null && pane) { const rect = pane.getBoundingClientRect(); anchor = (pane.scrollLeft + clientX - rect.left) / pxDay + range.start; }
+    const before = anchor;
+    setPxDay(pxDay * f);
+    if (before != null) { const rect = pane.getBoundingClientRect(); pane.scrollLeft = Math.max(0, (before - range.start) * pxDay - (clientX - rect.left)); }
+  }
+  function fit() {
+    const { computed } = Store;
+    const days = Math.max(14, computed.projFinish - computed.projStart + 14);
+    setPxDay((pane.clientWidth - 40) / days);
+    pane.scrollLeft = 0;
+  }
 
   function computeRange(rows) {
     const { computed, project } = Store; const C = computed.C;
     let lo = computed.projStart, hi = computed.projFinish;
-    for (const i of rows) { const t = project.tasks[i]; if (t.baseline) { const bs = U.toDay(t.baseline.start), bf = U.toDay(t.baseline.finish); if (bs != null) lo = Math.min(lo, bs); if (bf != null) hi = Math.max(hi, bf); } lo = Math.min(lo, C[i].es); hi = Math.max(hi, C[i].ef); }
+    for (const i of rows) { const t = project.tasks[i]; if (t.baseline) { const bs = U.toDay(t.baseline.start), bf = U.toDay(t.baseline.finish); if (bs != null) lo = Math.min(lo, bs); if (bf != null) hi = Math.max(hi, bf); } if (t.deadline) hi = Math.max(hi, U.toDay(t.deadline)); lo = Math.min(lo, C[i].es); hi = Math.max(hi, C[i].ef); }
     const td = U.today(); lo = Math.min(lo, td); hi = Math.max(hi, td);
-    lo -= zoom === 'month' ? 31 : 7; hi += zoom === 'month' ? 62 : 21;
-    while (U.dow(lo) !== 1) lo--; // alinear a lunes
+    const pad = Math.ceil(60 / pxDay);
+    lo -= pad; hi += pad * 2;
+    while (U.dow(lo) !== 1) lo--;
     const minDays = Math.ceil((pane ? pane.clientWidth : 800) / pxDay);
     if (hi - lo < minDays) hi = lo + minDays;
     range = { start: lo, end: hi };
   }
 
-  // ---------- cabecera ----------
+  // ---------- cabecera de dos niveles ----------
   function headerSVG(width) {
+    const { start, end } = range; const t = tier();
     let top = '', bottom = '';
-    const { start, end } = range;
-    const line = (x1, y1, y2) => `<line x1="${x1}" y1="${y1}" x2="${x1}" y2="${y2}" stroke="#d9dde3"/>`;
-    if (zoom === 'month') {
-      let d = start;
-      while (d < end) { const p = U.parts(d); const ny = Date.UTC(p.y + 1, 0, 1) / U.MS; const e = Math.min(ny, end); top += `<text x="${(x(d) + x(e)) / 2}" y="16" text-anchor="middle" font-weight="600">${p.y}</text>` + line(x(e), 0, HEAD); d = ny; }
-      d = start;
-      while (d < end) { const p = U.parts(d); const nm = Date.UTC(p.y, p.m + 1, 1) / U.MS; const e = Math.min(nm, end); bottom += `<text x="${(x(d) + x(e)) / 2}" y="38" text-anchor="middle">${U.MONTHS[p.m]}</text>` + line(x(e), 24, HEAD); d = nm; }
+    const line = (x1, y1, y2) => `<line x1="${x1}" y1="${y1}" x2="${x1}" y2="${y2}" stroke="#d4d8de"/>`;
+    const label = (a, b, y, txt, bold) => { if (x(b) - x(a) > txt.length * 5.5 + 6) return `<text x="${(x(a) + x(b)) / 2}" y="${y}" text-anchor="middle" ${bold ? 'font-weight="600"' : ''}>${txt}</text>`; return ''; };
+    const months = cb => { let d = start; while (d < end) { const p = U.parts(d); const nm = Date.UTC(p.y, p.m + 1, 1) / U.MS; cb(d, Math.min(nm, end), p); d = nm; } };
+    const years = cb => { let d = start; while (d < end) { const p = U.parts(d); const ny = Date.UTC(p.y + 1, 0, 1) / U.MS; cb(d, Math.min(ny, end), p); d = ny; } };
+    if (t === 'day') {
+      months((a, b, p) => { top += label(a, b, 16, `${U.MONTHS_LONG[p.m]} ${p.y}`, true) + line(x(b), 0, HEAD); });
+      for (let d = start; d < end; d++) { const p = U.parts(d); const we = U.dow(d) === 0 || U.dow(d) === 6; bottom += `<text x="${x(d) + pxDay / 2}" y="37" text-anchor="middle" fill="${we ? '#9ca3af' : '#1f2430'}">${pxDay >= 28 ? U.DAYS[U.dow(d)] + ' ' : ''}${p.d}</text>` + line(x(d + 1), 24, HEAD); }
+    } else if (t === 'week') {
+      months((a, b, p) => { top += label(a, b, 16, `${U.MONTHS_LONG[p.m]} ${p.y}`, true) + line(x(b), 0, HEAD); });
+      for (let d = start; d < end; d += 7) { const p = U.parts(d); bottom += `<text x="${x(d) + 3}" y="37">${pxDay >= 9 ? p.d + ' ' + U.MONTHS[p.m] : p.d}</text>` + line(x(d), 24, HEAD); }
+    } else if (t === 'month') {
+      years((a, b, p) => { top += label(a, b, 16, String(p.y), true) + line(x(b), 0, HEAD); });
+      months((a, b, p) => { bottom += label(a, b, 37, pxDay >= 3.2 ? U.MONTHS_LONG[p.m] : U.MONTHS[p.m]) + line(x(b), 24, HEAD); });
     } else {
-      let d = start;
-      while (d < end) { const p = U.parts(d); const nm = Date.UTC(p.y, p.m + 1, 1) / U.MS; const e = Math.min(nm, end); if (x(e) - x(d) > 40) top += `<text x="${(x(d) + x(e)) / 2}" y="16" text-anchor="middle" font-weight="600">${U.MONTHS_LONG[p.m]} ${p.y}</text>`; top += line(x(e), 0, HEAD); d = nm; }
-      if (zoom === 'day') { for (let d = start; d < end; d++) { const p = U.parts(d); bottom += `<text x="${x(d) + pxDay / 2}" y="38" text-anchor="middle" fill="${U.dow(d) === 0 || U.dow(d) === 6 ? '#9ca3af' : '#1f2430'}">${p.d}</text>` + line(x(d + 1), 24, HEAD); } }
-      else { for (let d = start; d < end; d += 7) { const p = U.parts(d); bottom += `<text x="${x(d) + 3}" y="38">${p.d}</text>` + line(x(d), 24, HEAD); } }
+      years((a, b, p) => { top += label(a, b, 16, String(p.y), true) + line(x(b), 0, HEAD); });
+      let d = start; while (d < end) { const p = U.parts(d); const q = Math.floor(p.m / 3); const nq = Date.UTC(p.y, q * 3 + 3, 1) / U.MS; bottom += label(d, Math.min(nq, end), 37, `T${q + 1}`) + line(x(Math.min(nq, end)), 24, HEAD); d = nq; }
     }
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${HEAD}"><rect width="${width}" height="${HEAD}" fill="#f3f4f6"/><line x1="0" y1="24" x2="${width}" y2="24" stroke="#d9dde3"/>${top}${bottom}</svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${HEAD}"><rect width="${width}" height="${HEAD}" fill="#f3f4f6"/><line x1="0" y1="24" x2="${width}" y2="24" stroke="#d4d8de"/>${top}${bottom}</svg>`;
+  }
+
+  // ---------- ruta de tareas (predecesoras y sucesoras de la selección) ----------
+  function taskPath() {
+    const { project, computed, selection } = Store; if (!App.options.path || !selection.length) return null;
+    const idx = computed.idx; const preds = new Set(), succs = new Set();
+    const walkP = id => { const t = project.tasks[idx.get(id)]; if (!t) return; for (const p of t.predecessors) if (!preds.has(p.id)) { preds.add(p.id); walkP(p.id); } };
+    const walkS = id => { for (const s of computed.successors[idx.get(id)] || []) if (!succs.has(s.id)) { succs.add(s.id); walkS(s.id); } };
+    for (const id of selection) { walkP(id); walkS(id); }
+    return { preds, succs, sel: new Set(selection) };
   }
 
   // ---------- cuerpo ----------
   function bodySVG(rows, opts) {
-    const { project, computed, selection } = Store; const tasks = project.tasks, C = computed.C, ol = computed.outline, cal = computed.cal;
+    const { project, computed } = Store; const tasks = project.tasks, C = computed.C, ol = computed.outline, cal = computed.cal;
     const width = Math.ceil((range.end - range.start) * pxDay), height = Math.max(rows.length * ROW, 1);
-    const sel = new Set(selection);
+    const sel = new Set(Store.selection);
     const resById = new Map(project.resources.map(r => [r.id, r]));
     const yOf = new Map(rows.map((i, k) => [i, k * ROW]));
-    let bg = '', bars = '', deps = '', labels = '';
+    const path = taskPath();
+    let bg = '', bars = '', deps = '', labels = '', over = '';
+    const t = tier();
 
-    // Fondo: filas, días no laborables, hoy
     for (let k = 0; k < rows.length; k++) {
       bg += `<rect class="row-sel" data-sel="${tasks[rows[k]].id}" x="0" y="${k * ROW}" width="${width}" height="${ROW}" visibility="${sel.has(tasks[rows[k]].id) ? 'visible' : 'hidden'}"/>`;
       bg += `<line x1="0" y1="${(k + 1) * ROW - .5}" x2="${width}" y2="${(k + 1) * ROW - .5}" stroke="#eceff3"/>`;
     }
-    if (pxDay >= 8) {
+    if (pxDay >= 5) {
       for (let d = range.start; d < range.end; d++) if (!cal.isWork(d)) bg += `<rect x="${x(d)}" y="0" width="${pxDay}" height="${height}" fill="#eef0f3"/>`;
-      // filas con calendario propio (responsables con calendario personal): sombrear sus días no laborables adicionales
       for (const i of rows) { const tc = C[i].cal; if (!tc || tc === cal) continue; const y = yOf.get(i); const lo = Math.max(range.start, C[i].es - 10), hi = Math.min(range.end, C[i].ef + 10); for (let d = lo; d < hi; d++) if (cal.isWork(d) && !tc.isWork(d)) bg += `<rect x="${x(d)}" y="${y + 2}" width="${pxDay}" height="${ROW - 4}" fill="#fde68a" opacity=".55"><title>No laborable para el responsable</title></rect>`; }
     }
-    if (zoom !== 'day') { for (let d = range.start; d < range.end; d++) { const p = U.parts(d); if (p.d === 1) bg += `<line x1="${x(d)}" y1="0" x2="${x(d)}" y2="${height}" stroke="#e3e6eb"/>`; } }
-    else { for (let d = range.start; d < range.end; d++) bg += `<line x1="${x(d)}" y1="0" x2="${x(d)}" y2="${height}" stroke="#f1f3f5"/>`; }
+    if (t === 'day') { for (let d = range.start; d < range.end; d++) bg += `<line x1="${x(d)}" y1="0" x2="${x(d)}" y2="${height}" stroke="#f1f3f5"/>`; }
+    else if (t === 'week') { for (let d = range.start; d < range.end; d += 7) bg += `<line x1="${x(d)}" y1="0" x2="${x(d)}" y2="${height}" stroke="#f1f3f5"/>`; }
+    for (let d = range.start; d < range.end; d++) { const p = U.parts(d); if (p.d === 1 && (t !== 'quarter' || p.m % 3 === 0)) bg += `<line x1="${x(d)}" y1="0" x2="${x(d)}" y2="${height}" stroke="#dfe3e8"/>`; }
     const td = U.today(); if (td >= range.start && td <= range.end) bg += `<line class="today" x1="${x(td) + pxDay / 2}" y1="0" x2="${x(td) + pxDay / 2}" y2="${height}"/>`;
+    const sd = project.statusDate ? U.toDay(project.statusDate) : null; if (sd != null && sd >= range.start && sd <= range.end) bg += `<line class="status-line" x1="${x(sd) + pxDay / 2}" y1="0" x2="${x(sd) + pxDay / 2}" y2="${height}"/>`;
 
-    // Barras
     for (const i of rows) {
-      const t = tasks[i], c = C[i], y = yOf.get(i), crit = c.critical && opts.critical;
+      const tk = tasks[i], c = C[i], y = yOf.get(i), sum = ol.isSummary[i];
+      const crit = c.critical && opts.critical && !sum;
       const x1 = x(c.es), x2 = x(c.ef + 1), w = Math.max(x2 - x1, 2);
-      const color = crit ? '#dc2626' : (ol.isSummary[i] ? '#374151' : '#2563eb');
-      let g = `<g class="task-row" data-id="${t.id}" data-i="${i}">`;
-      g += `<rect x="0" y="${y}" width="${width}" height="${ROW}" fill="transparent"/>`;
-      if (opts.baseline && t.baseline && !ol.isSummary[i]) {
-        const bs = U.toDay(t.baseline.start), bf = U.toDay(t.baseline.finish);
-        if (bs != null && bf != null) g += `<rect x="${x(bs)}" y="${y + 22}" width="${Math.max(x(bf + 1) - x(bs), 2)}" height="4" rx="1" fill="#9ca3af"/>`;
+      let color = sum ? '#2b2f36' : crit ? '#d93025' : '#3b7dd8';
+      let stroke = '';
+      if (path) { if (path.preds.has(tk.id)) { color = '#d97706'; } else if (path.succs.has(tk.id)) { color = '#7c3aed'; } else if (!path.sel.has(tk.id)) color = sum ? '#9ca3af' : '#b8c4d6'; else stroke = ' stroke="#111" stroke-width="1.5"'; }
+      const tip = `<title>${U.esc(tk.name)}\n${U.fmt(c.es)} → ${U.fmt(c.ef)} · ${tk.milestone ? 'hito' : tk.duration + ' días'}${sum ? '' : ' · holgura ' + c.slack + ' d'}${tk.progress ? ' · ' + tk.progress + '%' : ''}${tk.resources.length ? '\n' + tk.resources.map(id => (resById.get(id) || {}).name).filter(Boolean).join(', ') : ''}</title>`;
+      let g = `<g class="task-row" data-id="${tk.id}" data-i="${i}">`;
+      g += `<rect class="row-hover" x="0" y="${y}" width="${width}" height="${ROW}" fill="transparent"/>`;
+      if (opts.baseline && tk.baseline && !sum) {
+        const bs = U.toDay(tk.baseline.start), bf = U.toDay(tk.baseline.finish);
+        if (bs != null && bf != null) g += `<rect x="${x(bs)}" y="${y + 21}" width="${Math.max(x(bf + 1) - x(bs), 2)}" height="4" rx="1" fill="#9ca3af"><title>Línea base: ${U.fmt(bs)} → ${U.fmt(bf)}</title></rect>`;
       }
-      if (ol.isSummary[i]) {
-        const cy = y + 9;
-        g += `<path d="M${x1} ${cy - 4} H${x2} V${cy + 3} L${x2 - 5} ${cy + 9} L${x2 - 10} ${cy + 3} H${x1 + 10} L${x1 + 5} ${cy + 9} L${x1} ${cy + 3} Z" fill="${color}"/>`;
-      } else if (t.milestone) {
-        const cx = x1 + pxDay / 2, cy = y + ROW / 2, r = 8;
-        g += `<polygon class="bar" points="${cx},${cy - r} ${cx + r},${cy} ${cx},${cy + r} ${cx - r},${cy}" fill="${crit ? '#dc2626' : '#111827'}"/>`;
+      if (opts.slack && !sum && c.slack > 0 && c.lf > c.ef) {
+        g += `<line x1="${x2}" y1="${y + ROW / 2}" x2="${x(c.lf + 1)}" y2="${y + ROW / 2}" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="3 2"/><line x1="${x(c.lf + 1)}" y1="${y + 8}" x2="${x(c.lf + 1)}" y2="${y + ROW - 8}" stroke="#6b7280" stroke-width="1.5"/>`;
+      }
+      if (sum) {
+        const cy = y + 8;
+        g += `<path d="M${x1} ${cy - 3} H${x2} V${cy + 4} L${x2 - 5} ${cy + 10} L${x2 - 10} ${cy + 4} H${x1 + 10} L${x1 + 5} ${cy + 10} L${x1} ${cy + 4} Z" fill="${color}">${tip}</path>`;
+        if (tk.progress > 0) g += `<rect x="${x1}" y="${cy - 1}" width="${Math.max(w * Math.min(tk.progress, 100) / 100, 0)}" height="3" fill="#9ca3af"/>`;
+      } else if (tk.milestone) {
+        const cx = x1 + pxDay / 2, cy = y + ROW / 2, r = 7;
+        g += `<polygon class="bar" points="${cx},${cy - r} ${cx + r},${cy} ${cx},${cy + r} ${cx - r},${cy}" fill="${crit ? '#d93025' : (path && !path.sel.has(tk.id) && !path.preds.has(tk.id) && !path.succs.has(tk.id)) ? '#9ca3af' : '#111827'}"${stroke}>${tip}</polygon>`;
         g += `<circle class="link-handle" cx="${cx + r + 6}" cy="${cy}" r="4"/>`;
       } else {
-        const by = y + 8, bh = 14;
-        g += `<rect class="bar" x="${x1}" y="${by}" width="${w}" height="${bh}" rx="3" fill="${color}"/>`;
-        if (t.progress > 0) g += `<rect class="bar" x="${x1}" y="${by + 4}" width="${Math.max(w * Math.min(t.progress, 100) / 100, 0)}" height="${bh - 8}" rx="2" fill="rgba(0,0,0,.35)"/>`;
+        const by = y + 7, bh = 14;
+        g += `<rect class="bar" x="${x1}" y="${by}" width="${w}" height="${bh}" rx="2" fill="${color}"${stroke}>${tip}</rect>`;
+        if (tk.progress > 0) g += `<rect class="bar" x="${x1 + 1}" y="${by + 5}" width="${Math.max((w - 2) * Math.min(tk.progress, 100) / 100, 0)}" height="${bh - 10}" rx="1" fill="rgba(0,0,0,.45)"/>`;
         g += `<rect class="bar-resize" x="${x1 + w - 6}" y="${by}" width="8" height="${bh}"/>`;
         g += `<circle class="link-handle" cx="${x1 + w + 7}" cy="${by + bh / 2}" r="4"/>`;
       }
-      // Etiqueta: responsables (o nombre en resúmenes)
-      const lbl = ol.isSummary[i] ? '' : t.resources.map(id => (resById.get(id) || {}).name).filter(Boolean).join(', ');
-      if (lbl) labels += `<text x="${x2 + (t.milestone ? 20 : 16)}" y="${y + ROW / 2 + 4}" fill="#4b5563">${U.esc(lbl)}</text>`;
-      if (t.milestone) labels += `<text x="${x2 + 20 + (lbl ? lbl.length * 6 + 6 : 0)}" y="${y + ROW / 2 + 4}" fill="#6b7280">${U.esc(t.name)} · ${U.fmt(c.es)}</text>`;
+      if (tk.deadline) { const dd = U.toDay(tk.deadline); const dx = x(dd) + pxDay / 2; over += `<path d="M${dx - 5} ${y + 4} h10 l-5 8 z" fill="${c.deadlineMissed ? '#d93025' : '#16a34a'}"><title>Fecha límite ${U.fmt(dd)}${c.deadlineMissed ? ' · superada' : ''}</title></path>`; }
+      const parts = [];
+      if (opts.names || sum) parts.push(tk.name);
+      if (!sum) parts.push(...tk.resources.map(id => (resById.get(id) || {}).name).filter(Boolean));
+      const lbl = sum ? (opts.names ? tk.name : '') : parts.join(', ');
+      const lx = tk.milestone ? x1 + pxDay / 2 + 14 : x2 + 6;
+      if (lbl) labels += `<text x="${lx}" y="${y + ROW / 2 + 4}" fill="#374151">${U.esc(lbl)}</text>`;
+      if (tk.milestone && !opts.names) labels += `<text x="${lx + (lbl ? lbl.length * 6.2 + 8 : 0)}" y="${y + ROW / 2 + 4}" fill="#374151">${U.esc(tk.name)} · ${U.fmt(c.es)}</text>`;
       g += '</g>';
       bars += g;
     }
 
-    // Dependencias
     for (const i of rows) {
-      const t = tasks[i]; if (!yOf.has(i)) continue;
-      for (const p of t.predecessors) {
+      const tk = tasks[i];
+      for (const p of tk.predecessors) {
         const pi = computed.idx.get(p.id); if (pi == null || !yOf.has(pi)) continue;
         const pc = C[pi], sc = C[i];
-        const crit = opts.critical && pc.critical && sc.critical;
-        const fromRight = p.type === 'FS' || p.type === 'FF';
-        const toLeft = p.type === 'FS' || p.type === 'SS';
-        const sx = fromRight ? x(pc.ef + 1) : x(pc.es); const sy = yOf.get(pi) + (ol.isSummary[pi] ? 9 : ROW / 2);
-        const ex = toLeft ? x(sc.es) : x(sc.ef + 1); const ey = yOf.get(i) + (ol.isSummary[i] ? 9 : ROW / 2);
-        const ms = tasks[i].milestone ? pxDay / 2 - 8 : 0; // ajustar al rombo
-        const exA = toLeft ? ex + ms : ex - ms;
-        let d;
-        const down = ey > sy;
+        let cls = 'dep';
+        if (path) { if ((path.preds.has(p.id) || path.sel.has(p.id)) && (path.preds.has(tk.id) || path.sel.has(tk.id))) cls += ' path-pred'; else if ((path.succs.has(tk.id)) && (path.succs.has(p.id) || path.sel.has(p.id))) cls += ' path-succ'; }
+        else if (opts.critical && pc.critical && sc.critical) cls += ' critical';
+        const fromRight = p.type === 'FS' || p.type === 'FF', toLeft = p.type === 'FS' || p.type === 'SS';
+        const pm = tasks[pi].milestone ? pxDay / 2 - 7 : 0, sm = tk.milestone ? pxDay / 2 - 7 : 0;
+        const sx = fromRight ? x(pc.ef + 1) - pm : x(pc.es) + pm; const sy = yOf.get(pi) + (ol.isSummary[pi] ? 8 : ROW / 2);
+        const ex = toLeft ? x(sc.es) + sm : x(sc.ef + 1) - sm; const ey = yOf.get(i) + (ol.isSummary[i] ? 8 : ROW / 2);
+        let d; const down = ey > sy;
         if (toLeft) {
-          const h = fromRight ? sx + 8 : sx - 8;
-          if (exA - 8 >= h) d = `M${sx} ${sy} H${h} V${ey} H${exA}`;
-          else { const my = down ? sy + ROW / 2 : sy - ROW / 2; d = `M${sx} ${sy} H${h} V${my} H${exA - 8} V${ey} H${exA}`; }
-        } else {
-          const h = fromRight ? Math.max(sx + 8, exA + 8) : sx - 8;
-          d = `M${sx} ${sy} H${h} V${ey} H${exA}`;
-        }
-        const cls = crit ? 'dep critical' : 'dep';
+          const h = fromRight ? sx + 7 : sx - 7;
+          if (ex - 7 >= h) d = `M${sx} ${sy} H${h} V${ey} H${ex}`;
+          else { const my = down ? sy + ROW / 2 : sy - ROW / 2; d = `M${sx} ${sy} H${h} V${my} H${ex - 7} V${ey} H${ex}`; }
+        } else { const h = fromRight ? Math.max(sx + 7, ex + 7) : sx - 7; d = `M${sx} ${sy} H${h} V${ey} H${ex}`; }
         deps += `<path class="${cls}" d="${d}"/>`;
         const dir = toLeft ? 1 : -1;
-        deps += `<polygon class="dep-head${crit ? ' critical' : ''}" points="${exA},${ey} ${exA - 6 * dir},${ey - 3.5} ${exA - 6 * dir},${ey + 3.5}"/>`;
+        deps += `<polygon class="${cls.replace('dep', 'dep-head')}" points="${ex},${ey} ${ex - 6 * dir},${ey - 3.5} ${ex - 6 * dir},${ey + 3.5}"/>`;
       }
     }
-    return { svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">${bg}${deps}${bars}${labels}</svg>`, width, height };
+    return { svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">${bg}${deps}${bars}${over}${labels}</svg>`, width, height };
   }
 
   function render(rows) {
@@ -148,25 +195,24 @@ const Gantt = (() => {
     headerEl.innerHTML = headerSVG(width);
     bodyEl.innerHTML = svg;
   }
-
   function updateSelection() {
+    if (App.options.path) { App.refresh(); return; }
     const sel = new Set(Store.selection);
     bodyEl.querySelectorAll('rect[data-sel]').forEach(r => r.setAttribute('visibility', sel.has(r.dataset.sel) ? 'visible' : 'hidden'));
   }
-
   function scrollToDay(d) { pane.scrollLeft = Math.max(0, x(d) - pane.clientWidth / 3); }
+  function scrollToTask(i) { const c = Store.computed.C[i]; if (!c) return; const px = x(c.es); if (px < pane.scrollLeft + 20 || px > pane.scrollLeft + pane.clientWidth - 60) pane.scrollLeft = Math.max(0, px - 80); }
 
-  /** SVG autónomo para exportación (incluye columna de nombres) */
   function exportSVG(rows) {
     computeRange(rows);
     const { project, computed } = Store; const ol = computed.outline;
     const NAMEW = 300, { svg, width, height } = bodySVG(rows, Object.assign({}, App.options));
     const head = headerSVG(width);
     const inner = s => s.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');
-    let names = `<rect width="${NAMEW}" height="${HEAD}" fill="#f3f4f6"/><text x="8" y="30" font-weight="600">${U.esc(project.name)}</text>`;
-    rows.forEach((i, k) => { const t = project.tasks[i]; names += `<text x="${8 + (t.level - 1) * 14}" y="${HEAD + k * ROW + 19}" font-weight="${ol.isSummary[i] ? 600 : 400}">${U.esc(computed.outline.wbs[i] + '  ' + t.name)}</text><line x1="0" y1="${HEAD + (k + 1) * ROW - .5}" x2="${NAMEW}" y2="${HEAD + (k + 1) * ROW - .5}" stroke="#eceff3"/>`; });
-    const style = `<style>text{font-family:Segoe UI,system-ui,Arial,sans-serif;font-size:11px;fill:#1f2430}.dep{fill:none;stroke:#5b6474;stroke-width:1.2}.dep.critical{stroke:#dc2626}.dep-head{fill:#5b6474}.dep-head.critical{fill:#dc2626}.today{stroke:#ef4444;stroke-width:1.5;stroke-dasharray:4 3}.link-handle,.bar-resize{display:none}.row-sel{fill:none}</style>`;
-    return { svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${NAMEW + width}" height="${HEAD + height}" viewBox="0 0 ${NAMEW + width} ${HEAD + height}">${style}<rect width="100%" height="100%" fill="#fff"/><g>${names}</g><line x1="${NAMEW - .5}" y1="0" x2="${NAMEW - .5}" y2="${HEAD + height}" stroke="#d9dde3"/><g transform="translate(${NAMEW},0)">${inner(head)}</g><g transform="translate(${NAMEW},${HEAD})">${inner(svg)}</g></svg>`, width: NAMEW + width, height: HEAD + height };
+    let names = `<rect width="${NAMEW}" height="${HEAD}" fill="#f3f4f6"/><text x="8" y="29" font-weight="600">${U.esc(project.name)}</text>`;
+    rows.forEach((i, k) => { const t = project.tasks[i]; names += `<text x="${8 + (t.level - 1) * 14}" y="${HEAD + k * ROW + 18}" font-weight="${ol.isSummary[i] ? 600 : 400}">${U.esc(computed.outline.wbs[i] + '  ' + t.name)}</text><line x1="0" y1="${HEAD + (k + 1) * ROW - .5}" x2="${NAMEW}" y2="${HEAD + (k + 1) * ROW - .5}" stroke="#eceff3"/>`; });
+    const style = `<style>text{font-family:Segoe UI,system-ui,Arial,sans-serif;font-size:11px;fill:#1f2430}.dep{fill:none;stroke:#4b5563;stroke-width:1.2}.dep.critical{stroke:#d93025}.dep-head{fill:#4b5563}.dep-head.critical{fill:#d93025}.dep.path-pred{stroke:#d97706}.dep.path-succ{stroke:#7c3aed}.dep-head.path-pred{fill:#d97706}.dep-head.path-succ{fill:#7c3aed}.today{stroke:#ef4444;stroke-width:1.5;stroke-dasharray:4 3}.status-line{stroke:#16a34a;stroke-dasharray:2 3}.link-handle,.bar-resize{display:none}.row-sel{fill:none}</style>`;
+    return { svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${NAMEW + width}" height="${HEAD + height}" viewBox="0 0 ${NAMEW + width} ${HEAD + height}">${style}<rect width="100%" height="100%" fill="#fff"/><g>${names}</g><line x1="${NAMEW - .5}" y1="0" x2="${NAMEW - .5}" y2="${HEAD + height}" stroke="#d4d8de"/><g transform="translate(${NAMEW},0)">${inner(head)}</g><g transform="translate(${NAMEW},${HEAD})">${inner(svg)}</g></svg>`, width: NAMEW + width, height: HEAD + height };
   }
 
   // ---------- interacción ----------
@@ -175,19 +221,18 @@ const Gantt = (() => {
     const g = e.target.closest('g[data-id]'); if (!g) return;
     const id = g.dataset.id, i = +g.dataset.i;
     const { computed } = Store; const c = computed.C[i]; const t = Store.project.tasks[i];
-    if (!(e.ctrlKey || e.metaKey || e.shiftKey)) { if (!Store.selection.includes(id)) Store.select(id); }
-    else if (e.shiftKey) Store.selectRange(id); else Store.select(id, { toggle: true });
+    if (e.shiftKey) Table.setActive(i, 'name', { range: true }); else if (e.ctrlKey || e.metaKey) Table.setActive(i, 'name', { toggle: true }); else if (!Store.selection.includes(id)) Table.setActive(i, 'name');
     if (computed.outline.isSummary[i]) return;
     const rect = bodyEl.getBoundingClientRect();
     const start = { x: e.clientX, y: e.clientY, px: e.clientX - rect.left, py: e.clientY - rect.top };
     if (e.target.classList.contains('link-handle')) {
       drag = { mode: 'link', id, i, start, line: null }; bodyEl.classList.add('linking');
       const svg = bodyEl.querySelector('svg'); const ln = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      ln.setAttribute('x1', start.px); ln.setAttribute('y1', start.py); ln.setAttribute('x2', start.px); ln.setAttribute('y2', start.py); ln.setAttribute('stroke', '#2563eb'); ln.setAttribute('stroke-dasharray', '4 3'); svg.appendChild(ln); drag.line = ln;
+      ln.setAttribute('x1', start.px); ln.setAttribute('y1', start.py); ln.setAttribute('x2', start.px); ln.setAttribute('y2', start.py); ln.setAttribute('stroke', '#1f4f8f'); ln.setAttribute('stroke-dasharray', '4 3'); svg.appendChild(ln); drag.line = ln;
     } else if (e.target.classList.contains('bar-resize')) {
       drag = { mode: 'resize', id, i, start, es: c.es, ef: c.ef, el: g.querySelector('rect.bar') };
     } else if (e.target.classList.contains('bar')) {
-      drag = { mode: 'move', id, i, start, es: c.es, ef: c.ef, g, moved: false, dur: Scheduler.dur(t), milestone: t.milestone };
+      drag = { mode: 'move', id, i, start, es: c.es, ef: c.ef, g, moved: false, milestone: t.milestone };
     }
     if (drag) e.preventDefault();
   }
@@ -196,13 +241,13 @@ const Gantt = (() => {
     const dx = e.clientX - drag.start.x;
     if (drag.mode === 'link') { const rect = bodyEl.getBoundingClientRect(); drag.line.setAttribute('x2', e.clientX - rect.left); drag.line.setAttribute('y2', e.clientY - rect.top); return; }
     const days = Math.round(dx / pxDay);
-    if (drag.mode === 'move') { drag.moved = drag.moved || Math.abs(dx) > 3; drag.days = days; drag.g.querySelectorAll('.bar, .link-handle, .bar-resize').forEach(el => el.setAttribute('transform', `translate(${days * pxDay},0)`)); }
-    else if (drag.mode === 'resize') { const newEf = Math.max(drag.es, drag.ef + days); drag.newEf = newEf; drag.el.setAttribute('width', Math.max(x(newEf + 1) - x(drag.es), 2)); }
+    if (drag.mode === 'move') { drag.moved = drag.moved || Math.abs(dx) > 3; drag.days = days; drag.g.querySelectorAll('.bar, .link-handle, .bar-resize').forEach(el => el.setAttribute('transform', `translate(${days * pxDay},0)`)); App.setStatusHint(`Mover a: ${U.fmt(drag.es + days)}`); }
+    else if (drag.mode === 'resize') { const newEf = Math.max(drag.es, drag.ef + days); drag.newEf = newEf; drag.el.setAttribute('width', Math.max(x(newEf + 1) - x(drag.es), 2)); App.setStatusHint(`Fin: ${U.fmt(newEf)}`); }
   }
   function onUp(e) {
     if (!drag) return;
-    const d = drag; drag = null; bodyEl.classList.remove('linking');
-    const { computed } = Store; const cal = computed.cal;
+    const d = drag; drag = null; bodyEl.classList.remove('linking'); App.setStatusHint('');
+    const { computed } = Store; const cal = computed.C[d.i] && computed.C[d.i].cal || computed.cal;
     if (d.mode === 'link') {
       d.line.remove();
       const target = document.elementFromPoint(e.clientX, e.clientY); const g = target && target.closest && target.closest('g[data-id]');
@@ -221,5 +266,5 @@ const Gantt = (() => {
     }
   }
 
-  return { init, render, updateSelection, setZoom, scrollToDay, exportSVG, ROW, HEAD, get zoom() { return zoom; } };
+  return { init, render, updateSelection, setZoom, setPxDay, zoomBy, fit, scrollToDay, scrollToTask, exportSVG, ROW, HEAD, tier, get pxDay() { return pxDay; }, get range() { return range; } };
 })();

@@ -10,7 +10,7 @@ const Store = (() => {
     return {
       id: U.uid(), name: o.name ?? 'Nueva tarea', level: o.level ?? 1, duration: o.duration ?? (o.milestone ? 0 : 5),
       milestone: !!o.milestone, progress: o.progress ?? 0, predecessors: o.predecessors ?? [], resources: o.resources ?? [],
-      constraint: o.constraint ?? { type: 'ASAP', date: null }, notes: o.notes ?? '', collapsed: false, baseline: o.baseline ?? null, ignoreResourceCalendars: !!o.ignoreResourceCalendars,
+      constraint: o.constraint ?? { type: 'ASAP', date: null }, notes: o.notes ?? '', collapsed: false, baseline: o.baseline ?? null, ignoreResourceCalendars: !!o.ignoreResourceCalendars, deadline: o.deadline ?? null, priority: o.priority ?? 500,
       start: null, finish: null
     };
   }
@@ -18,7 +18,7 @@ const Store = (() => {
     return { id: U.uid(), name: o.name ?? 'Responsable', role: o.role ?? '', color: o.color ?? U.PALETTE[(project ? project.resources.length : 0) % U.PALETTE.length], calendar: o.calendar ?? null };
   }
   function blank(name) {
-    return { version: 1, name: name || 'Nuevo proyecto', start: U.fromDay(U.today()), calendar: { workDays: [1, 2, 3, 4, 5], exceptions: [] }, resources: [], tasks: [], baselineDate: null };
+    return { version: 2, id: U.uid(), name: name || 'Nuevo proyecto', start: U.fromDay(U.today()), statusDate: null, notes: '', calendar: { workDays: [1, 2, 3, 4, 5], exceptions: [] }, resources: [], tasks: [], baselineDate: null, modified: Date.now() };
   }
   function normalize(p) {
     const b = blank();
@@ -29,6 +29,7 @@ const Store = (() => {
     p.resources = p.resources.map(r => { const x = Object.assign(newResource(), r); x.calendar = x.calendar ? normalizeCalendar(x.calendar, false) : null; return x; });
     p.tasks = p.tasks.map(t => Object.assign(newTask(), t));
     if (U.toDay(p.start) == null) p.start = U.fromDay(U.today());
+    if (!p.id) p.id = U.uid();
     return p;
   }
 
@@ -68,17 +69,46 @@ const Store = (() => {
     add('Pruebas QA', 2, 6, { predecessors: fs(12), resources: [jon] });
     add('Corrección de incidencias', 2, 4, { predecessors: fs(14), resources: [marta, jon] });
     add('Plan de comunicación', 2, 10, { predecessors: fs(4), resources: [sara] });
-    add('Lanzamiento', 2, 0, { milestone: true, predecessors: fs(15, 16) });
+    add('Lanzamiento', 2, 0, { milestone: true, predecessors: fs(15, 16), deadline: '2027-01-29', notes: 'Fecha comprometida con Dirección.' });
+    T[2].notes = 'Entrevistas con los 5 clientes clave y el equipo de soporte.';
     return p;
   }
 
+  // ---- persistencia multi-proyecto ----
+  const LIB = 'planner.projects.v2';
+  let library = { current: null, items: {} };
+  function readLib() { try { const s = localStorage.getItem(LIB); if (s) library = JSON.parse(s); } catch (e) { /* vacío */ } if (!library.items) library.items = {}; }
   function recompute() { computed = Scheduler.compute(project); }
-  function save() { try { localStorage.setItem(KEY, JSON.stringify(project)); } catch (e) { /* sin persistencia */ } }
+  function save() {
+    project.modified = Date.now();
+    library.items[project.id] = project; library.current = project.id;
+    try { localStorage.setItem(LIB, JSON.stringify(library)); saved = true; } catch (e) { saved = false; }
+  }
+  let saved = true;
   function load() {
-    try { const s = localStorage.getItem(KEY); project = s ? normalize(JSON.parse(s)) : sample(); }
-    catch (e) { project = sample(); }
+    readLib();
+    let p = null;
+    if (library.current && library.items[library.current]) p = library.items[library.current];
+    else {
+      try { const s = localStorage.getItem(KEY); if (s) { p = JSON.parse(s); localStorage.removeItem(KEY); } } catch (e) { /* ignorar */ }
+    }
+    project = p ? normalize(p) : sample();
+    if (!p) { recompute(); save(); }
     recompute();
   }
+  /** Lista de proyectos guardados (resumen) */
+  function listProjects() {
+    return Object.values(library.items).map(p => ({ id: p.id, name: p.name, start: p.start, tasks: (p.tasks || []).length, modified: p.modified || 0, finish: (p.tasks || []).reduce((m, t) => t.finish > m ? t.finish : m, p.start) })).sort((a, b) => b.modified - a.modified);
+  }
+  function openProject(id) { const p = library.items[id]; if (!p) return false; undoStack.length = 0; redoStack.length = 0; selection = []; project = normalize(p); recompute(); save(); emit(); return true; }
+  function deleteProject(id) { delete library.items[id]; if (library.current === id) library.current = null; try { localStorage.setItem(LIB, JSON.stringify(library)); } catch (e) { /* */ } }
+  function createProject(p) { undoStack.length = 0; redoStack.length = 0; selection = []; project = normalize(p || blank()); if (!p) project.id = U.uid(); recompute(); save(); emit(); }
+  // ---- preferencias de vista (columnas, zoom…) ----
+  const PREF = 'planner.prefs.v1';
+  let prefs = {};
+  try { prefs = JSON.parse(localStorage.getItem(PREF) || '{}'); } catch (e) { prefs = {}; }
+  function setPref(k, v) { prefs[k] = v; try { localStorage.setItem(PREF, JSON.stringify(prefs)); } catch (e) { /* */ } }
+  function getPref(k, d) { return prefs[k] === undefined ? d : prefs[k]; }
   function emit(type = 'data') { listeners.forEach(f => f(type)); }
   function subscribe(f) { listeners.push(f); }
 
@@ -122,7 +152,8 @@ const Store = (() => {
 
   return {
     get project() { return project; }, get computed() { return computed; }, get selection() { return selection; },
-    get canUndo() { return undoStack.length > 0; }, get canRedo() { return redoStack.length > 0; },
+    get canUndo() { return undoStack.length > 0; }, get canRedo() { return redoStack.length > 0; }, get saved() { return saved; },
+    listProjects, openProject, deleteProject, createProject, setPref, getPref,
     newTask, newResource, blank, normalize, normalizeCalendar, sample, load, save, recompute, mutate, undo, redo, subscribe, emit,
     select, selectRange, selectedIndices, taskById, indexOf, blockEnd, isAncestor
   };
