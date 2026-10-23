@@ -130,11 +130,13 @@ button.big .ico { font-size: 20px; line-height: 22px; }
 
 /* ---------- gantt ---------- */
 .gantt-body svg text, .gantt-header svg text { font-family: inherit; font-size: 11px; fill: var(--text); user-select: none; }
+.gantt-body text { pointer-events: none; }
 .gantt-body .bar { cursor: grab; }
 .gantt-body .bar:active { cursor: grabbing; }
 .bar-resize { cursor: ew-resize; fill: transparent; }
 .link-handle { fill: #fff; stroke: var(--bar-dark); stroke-width: 1.5; cursor: crosshair; opacity: 0; }
-.task-row:hover .link-handle { opacity: 1; }
+.task-row:hover .link-handle, .gantt-body.linking .link-handle { opacity: 1; }
+.link-handle:hover { fill: var(--bar-dark); }
 .task-row:hover .row-hover { fill: rgba(79,138,214,.07); }
 .dep { fill: none; stroke: #4b5563; stroke-width: 1.2; }
 .dep.critical { stroke: var(--critical); }
