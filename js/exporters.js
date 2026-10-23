@@ -14,9 +14,10 @@ const Exporters = (() => {
     const { project, computed } = Store; const C = computed.C, ol = computed.outline;
     const resById = new Map(project.resources.map(r => [r.id, r]));
     const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
-    const rows = [['Id', 'EDT', 'Nivel', 'Nombre', 'Duración (días)', 'Comienzo', 'Fin', 'Predecesoras', 'Responsables', '% completado', 'Hito', 'Resumen', 'Crítica', 'Holgura (días)', 'Comienzo LB', 'Fin LB', 'Notas']];
-    project.tasks.forEach((t, i) => rows.push([i + 1, ol.wbs[i], t.level, t.name, t.duration, U.fmt(C[i].es), U.fmt(C[i].ef), Table.predsToText(t),
-      t.resources.map(id => (resById.get(id) || {}).name).filter(Boolean).join(', '), t.progress || 0, t.milestone ? 'Sí' : 'No', ol.isSummary[i] ? 'Sí' : 'No', C[i].critical ? 'Sí' : 'No', C[i].slack,
+    const rows = [['Id', 'EDT', 'Nivel', 'Nombre', 'Duración (días)', 'Comienzo', 'Fin', 'Predecesoras', 'Sucesoras', 'Responsables', '% completado', 'Hito', 'Resumen', 'Crítica', 'Holgura total (días)', 'Holgura libre (días)', 'Comienzo límite', 'Fin límite', 'Fecha límite', 'Restricción', 'Comienzo LB', 'Fin LB', 'Notas']];
+    project.tasks.forEach((t, i) => rows.push([i + 1, ol.wbs[i], t.level, t.name, t.duration, U.fmt(C[i].es), U.fmt(C[i].ef), Table.predsToText(t), Table.linkText(computed.successors[i]),
+      t.resources.map(id => (resById.get(id) || {}).name).filter(Boolean).join(', '), t.progress || 0, t.milestone ? 'Sí' : 'No', ol.isSummary[i] ? 'Sí' : 'No', C[i].critical ? 'Sí' : 'No', C[i].slack, C[i].freeSlack, U.fmt(C[i].ls), U.fmt(C[i].lf),
+      t.deadline ? U.fmt(U.toDay(t.deadline)) : '', t.constraint && t.constraint.type !== 'ASAP' && t.constraint.date ? `${Table.CONS_LABEL[t.constraint.type]} ${U.fmt(U.toDay(t.constraint.date))}` : '',
       t.baseline ? U.fmt(U.toDay(t.baseline.start)) : '', t.baseline ? U.fmt(U.toDay(t.baseline.finish)) : '', t.notes]));
     U.download(U.safeName(project.name) + '.csv', '﻿' + rows.map(r => r.map(q).join(';')).join('\r\n'), 'text/csv;charset=utf-8');
   }
@@ -54,6 +55,8 @@ const Exporters = (() => {
       const cons = t.constraint || { type: 'ASAP' };
       x += `<ConstraintType>${MSP_CONS[cons.type] ?? 0}</ConstraintType>${cons.date && cons.type !== 'ASAP' ? `<ConstraintDate>${T8(cons.date)}</ConstraintDate>` : ''}`;
       if (t.notes) x += `<Notes>${e(t.notes)}</Notes>`;
+      if (t.deadline) x += `<Deadline>${T17(t.deadline)}</Deadline>`;
+      x += `<Priority>${t.priority || 500}</Priority>`;
       if (t.ignoreResourceCalendars) x += `<IgnoreResourceCalendar>1</IgnoreResourceCalendar>`;
       if (t.baseline) x += `<Baseline><Number>0</Number><Start>${T8(t.baseline.start)}</Start><Finish>${T17(t.baseline.finish)}</Finish></Baseline>`;
       for (const p of t.predecessors) { const pu = uidOf.get(p.id); if (pu) x += `<PredecessorLink><PredecessorUID>${pu}</PredecessorUID><Type>${MSP_TYPE[p.type] ?? 1}</Type><CrossProject>0</CrossProject><LinkLag>${(p.lag | 0) * 4800}</LinkLag><LagFormat>7</LagFormat></PredecessorLink>`; }
@@ -83,7 +86,23 @@ const Exporters = (() => {
     img.onerror = () => App.toast('No se pudo generar el PNG; prueba la exportación SVG');
     img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
   }
-  function print() { window.print(); }
+  function print(rows) {
+    const { project, computed } = Store;
+    const { svg, width, height } = Gantt.exportSVG(rows || App.visibleRows());
+    const w = window.open('', '_blank');
+    if (!w) { App.toast('El navegador ha bloqueado la ventana de impresión'); return; }
+    const landscape = width > height * 1.1;
+    w.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>${U.esc(project.name)}</title>
+      <style>@page{size:A4 ${landscape ? 'landscape' : 'portrait'};margin:12mm}body{font-family:Segoe UI,system-ui,Arial,sans-serif;color:#1f2430;margin:0}
+      h1{font-size:18px;margin:0 0 2px}.meta{font-size:11px;color:#6b7280;margin-bottom:8px}svg{width:100%;height:auto;max-height:calc(100vh - 60px)}
+      .legend{font-size:10px;color:#6b7280;margin-top:6px;display:flex;gap:14px}.sw{display:inline-block;width:14px;height:8px;vertical-align:middle;margin-right:3px}</style></head><body>
+      <h1>${U.esc(project.name)}</h1>
+      <div class="meta">Inicio ${U.fmt(computed.projStart)} · Fin ${U.fmt(computed.projFinish)} · ${computed.duration} días laborables · ${project.tasks.length} tareas · impreso el ${U.fmt(U.today())}</div>
+      ${svg}
+      <div class="legend"><span><span class="sw" style="background:#3b7dd8"></span>Tarea</span><span><span class="sw" style="background:#d93025"></span>Tarea crítica</span><span><span class="sw" style="background:#2b2f36"></span>Resumen</span><span>◆ Hito</span>${App.options.baseline ? '<span><span class="sw" style="background:#9ca3af"></span>Línea base</span>' : ''}<span>▼ Fecha límite</span></div>
+      <script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script></body></html>`);
+    w.document.close();
+  }
 
   // ---------- importación ----------
   function importFile(file) {
@@ -120,7 +139,7 @@ const Exporters = (() => {
         if (type >= 1 && type <= 7) { hasWeek = true; if (working) wd.push(type - 1); }
         else if (type === 0) { const pr = period(w); if (pr) ex.push({ ...pr, name: '', working }); }
       }
-      for (const x of cal.getElementsByTagName('Exception')) { const pr = period(x); if (pr && !ex.some(y => y.from === pr.from && y.to === pr.to)) ex.push({ ...pr, name: g(x, 'Name'), working: g(x, 'DayWorking') === '1' }); }
+      for (const x of cal.getElementsByTagName('Exception')) { const pr = period(x); if (!pr) continue; const dup = ex.find(y => y.from === pr.from && y.to === pr.to); if (dup) { if (!dup.name) dup.name = g(x, 'Name'); } else ex.push({ ...pr, name: g(x, 'Name'), working: g(x, 'DayWorking') === '1' }); }
       return { uid: g(cal, 'UID'), base: g(cal, 'BaseCalendarUID'), name: g(cal, 'Name'), workDays: hasWeek ? wd : null, exceptions: ex };
     };
     const calEls = [...root.getElementsByTagName('Calendar')].map(parseCalendar);
@@ -149,7 +168,7 @@ const Exporters = (() => {
       const start = U.toDay(g(te, 'Start')), fin = U.toDay(g(te, 'Finish'));
       let dur = parseDur(g(te, 'Duration')); if (dur == null) dur = (start != null && fin != null) ? new WorkCalendar(p.calendar.workDays, p.calendar.exceptions).duration(start, fin) : 1;
       const ms = g(te, 'Milestone') === '1' || dur === 0;
-      const t = Store.newTask({ name: g(te, 'Name') || 'Tarea', level: lvl, duration: ms ? 0 : Math.max(1, dur), milestone: ms, progress: +g(te, 'PercentComplete') || 0, notes: g(te, 'Notes'), ignoreResourceCalendars: g(te, 'IgnoreResourceCalendar') === '1' });
+      const t = Store.newTask({ name: g(te, 'Name') || 'Tarea', level: lvl, duration: ms ? 0 : Math.max(1, dur), milestone: ms, progress: +g(te, 'PercentComplete') || 0, notes: g(te, 'Notes'), ignoreResourceCalendars: g(te, 'IgnoreResourceCalendar') === '1', deadline: U.toDay(g(te, 'Deadline')) != null ? U.fromDay(U.toDay(g(te, 'Deadline'))) : null, priority: +g(te, 'Priority') || 500 });
       const ct = +g(te, 'ConstraintType'), cd = U.toDay(g(te, 'ConstraintDate'));
       if (cd != null) { if (ct === 2) t.constraint = { type: 'MSO', date: U.fromDay(cd) }; else if (ct === 4 || ct === 6) t.constraint = { type: 'SNET', date: U.fromDay(cd) }; }
       const bl = te.getElementsByTagName('Baseline')[0]; if (bl) { const bs = U.toDay(g(bl, 'Start')), bf = U.toDay(g(bl, 'Finish')); if (bs != null && bf != null) t.baseline = { start: U.fromDay(bs), finish: U.fromDay(bf) }; }

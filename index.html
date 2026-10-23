@@ -7,75 +7,193 @@
 <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-<header class="topbar">
-  <div class="brand" title="Planner">▦ Planner</div>
+<!-- ======================= Barra de título ======================= -->
+<header class="titlebar">
+  <div class="brand"><span class="logo">P</span> Planner</div>
   <input id="projectName" class="project-name" title="Nombre del proyecto" spellcheck="false">
-  <div class="toolbar">
-    <div class="tb-group">
-      <button id="btnUndo" title="Deshacer (Ctrl+Z)">↶</button>
-      <button id="btnRedo" title="Rehacer (Ctrl+Y)">↷</button>
-    </div>
-    <div class="tb-group">
-      <button id="btnAddTask" title="Nueva tarea (Insert)">+ Tarea</button>
-      <button id="btnAddMilestone" title="Nuevo hito">◆ Hito</button>
-      <button id="btnInfo" title="Información de la tarea (Enter)">ℹ</button>
-      <button id="btnDelete" title="Eliminar tarea (Supr)">🗑</button>
-    </div>
-    <div class="tb-group">
-      <button id="btnOutdent" title="Anular sangría (Shift+Tab)">⇤</button>
-      <button id="btnIndent" title="Aplicar sangría (Tab)">⇥</button>
-      <button id="btnUp" title="Subir">↑</button>
-      <button id="btnDown" title="Bajar">↓</button>
-    </div>
-    <div class="tb-group">
-      <button id="btnLink" title="Vincular tareas seleccionadas (Fin a Comienzo)">🔗 Vincular</button>
-      <button id="btnUnlink" title="Desvincular tareas seleccionadas">⛓ Desvincular</button>
-    </div>
-    <div class="tb-group">
-      <label class="toggle"><input type="checkbox" id="chkCritical" checked> Ruta crítica</label>
-      <label class="toggle"><input type="checkbox" id="chkBaseline"> Línea base</label>
-      <button id="btnBaseline" title="Guardar la planificación actual como línea base">Guardar LB</button>
-    </div>
-    <div class="tb-group">
-      <select id="zoom" title="Escala temporal">
-        <option value="day">Días</option>
-        <option value="week" selected>Semanas</option>
-        <option value="month">Meses</option>
-      </select>
-      <button id="btnToday" title="Ir a hoy">Hoy</button>
-    </div>
-    <div class="tb-group">
-      <button id="btnResources">👥 Responsables</button>
-      <button id="btnSettings">⚙ Proyecto</button>
-    </div>
-    <div class="tb-group">
-      <button id="btnImport" title="Importar JSON o XML de MS Project">⤓ Importar</button>
-      <div class="dropdown">
-        <button id="btnExport">⤒ Exportar ▾</button>
-        <div class="menu" id="exportMenu">
-          <button data-export="json">JSON (copia completa del proyecto)</button>
-          <button data-export="xml">XML de Microsoft Project</button>
-          <button data-export="csv">CSV (Excel)</button>
-          <button data-export="png">Imagen PNG del Gantt</button>
-          <button data-export="svg">Imagen SVG del Gantt</button>
-          <button data-export="print">Imprimir / PDF</button>
-        </div>
-      </div>
-      <input type="file" id="fileImport" accept=".json,.xml" hidden>
-    </div>
+  <span class="save-state" id="saveState">Guardado</span>
+  <span class="spacer"></span>
+  <div class="view-switch" id="viewSwitch">
+    <button data-view="gantt" class="on">Diagrama de Gantt</button>
+    <button data-view="resources">Hoja de recursos</button>
   </div>
 </header>
 
-<div class="filterbar">
-  <input id="filterText" type="search" placeholder="Buscar tarea…">
-  <select id="filterResource"><option value="">Todos los responsables</option></select>
-  <label class="toggle"><input type="checkbox" id="filterCritical"> Solo críticas</label>
-  <span class="spacer"></span>
-  <button id="btnExpandAll" class="link">Expandir todo</button>
-  <button id="btnCollapseAll" class="link">Contraer todo</button>
-</div>
+<!-- ======================= Cinta de opciones ======================= -->
+<nav class="ribbon">
+  <div class="ribbon-tabs" id="ribbonTabs">
+    <button data-tab="file" class="file-tab">Archivo</button>
+    <button data-tab="task" class="on">Tarea</button>
+    <button data-tab="view">Vista</button>
+    <button data-tab="project">Proyecto</button>
+    <span class="spacer"></span>
+    <button id="btnHelp" class="help" title="Atajos de teclado">? Atajos</button>
+  </div>
 
-<main class="workspace">
+  <!-- Pestaña Tarea -->
+  <div class="ribbon-panel on" data-panel="task">
+    <div class="rgroup">
+      <div class="rbtns">
+        <button class="big" id="btnUndo" title="Deshacer (Ctrl+Z)"><span class="ico">↶</span>Deshacer</button>
+        <button class="big" id="btnRedo" title="Rehacer (Ctrl+Y)"><span class="ico">↷</span>Rehacer</button>
+      </div><div class="rlabel">Edición</div>
+    </div>
+    <div class="rgroup">
+      <div class="rbtns">
+        <button class="big" id="btnAddTask" title="Insertar tarea (Insert)"><span class="ico">＋</span>Tarea</button>
+        <button class="big" id="btnAddMilestone" title="Insertar hito"><span class="ico">◆</span>Hito</button>
+        <button class="big" id="btnAddSummary" title="Insertar tarea de resumen sobre la selección"><span class="ico">▣</span>Resumen</button>
+        <button class="big" id="btnDelete" title="Eliminar tarea (Supr)"><span class="ico">🗑</span>Eliminar</button>
+      </div><div class="rlabel">Insertar</div>
+    </div>
+    <div class="rgroup">
+      <div class="rbtns">
+        <div class="rcol">
+          <button id="btnPct0" title="0 % completado">0%</button>
+          <button id="btnPct25" title="25 % completado">25%</button>
+          <button id="btnPct50" title="50 % completado">50%</button>
+        </div>
+        <div class="rcol">
+          <button id="btnPct75" title="75 % completado">75%</button>
+          <button id="btnPct100" title="100 % completado">100%</button>
+        </div>
+        <button class="big" id="btnLink" title="Vincular las tareas seleccionadas (Ctrl+F2)"><span class="ico">🔗</span>Vincular</button>
+        <button class="big" id="btnUnlink" title="Desvincular las tareas seleccionadas (Ctrl+Mayús+F2)"><span class="ico">⛓</span>Desvincular</button>
+      </div><div class="rlabel">Programación</div>
+    </div>
+    <div class="rgroup">
+      <div class="rbtns">
+        <div class="rcol">
+          <button id="btnOutdent" title="Anular sangría (Alt+Mayús+←)">⇤ Anular sangría</button>
+          <button id="btnIndent" title="Aplicar sangría (Alt+Mayús+→)">⇥ Aplicar sangría</button>
+        </div>
+        <div class="rcol">
+          <button id="btnUp" title="Mover arriba">↑ Subir</button>
+          <button id="btnDown" title="Mover abajo">↓ Bajar</button>
+        </div>
+      </div><div class="rlabel">Esquema</div>
+    </div>
+    <div class="rgroup">
+      <div class="rbtns">
+        <button class="big" id="btnInfo" title="Información de la tarea (Mayús+F2)"><span class="ico">ℹ</span>Información</button>
+        <button class="big" id="btnNotes" title="Notas de la tarea"><span class="ico">📝</span>Notas</button>
+        <button class="big" id="btnScrollTo" title="Desplazarse a la tarea en el Gantt (Ctrl+Mayús+F5)"><span class="ico">⌖</span>Ir a tarea</button>
+      </div><div class="rlabel">Propiedades</div>
+    </div>
+  </div>
+
+  <!-- Pestaña Vista -->
+  <div class="ribbon-panel" data-panel="view">
+    <div class="rgroup">
+      <div class="rbtns">
+        <button class="big" data-view="gantt"><span class="ico">▤</span>Gantt</button>
+        <button class="big" data-view="resources"><span class="ico">👥</span>Recursos</button>
+      </div><div class="rlabel">Vistas</div>
+    </div>
+    <div class="rgroup">
+      <div class="rbtns">
+        <div class="rcol">
+          <select id="zoom" title="Escala temporal">
+            <option value="day">Días</option>
+            <option value="week" selected>Semanas</option>
+            <option value="month">Meses</option>
+            <option value="quarter">Trimestres</option>
+          </select>
+          <button id="btnFit" title="Ajustar el proyecto completo a la ventana">⤢ Proyecto completo</button>
+        </div>
+        <div class="rcol">
+          <button id="btnZoomIn" title="Acercar">🔍+ Acercar</button>
+          <button id="btnZoomOut" title="Alejar">🔍− Alejar</button>
+        </div>
+        <button class="big" id="btnToday" title="Ir a hoy"><span class="ico">📍</span>Hoy</button>
+      </div><div class="rlabel">Zoom</div>
+    </div>
+    <div class="rgroup">
+      <div class="rbtns">
+        <div class="rcol">
+          <label class="toggle"><input type="checkbox" id="chkCritical" checked> Ruta crítica</label>
+          <label class="toggle"><input type="checkbox" id="chkSlack"> Holgura</label>
+          <label class="toggle"><input type="checkbox" id="chkBaseline"> Línea base</label>
+        </div>
+        <div class="rcol">
+          <label class="toggle"><input type="checkbox" id="chkPath"> Ruta de tareas</label>
+          <label class="toggle"><input type="checkbox" id="chkTimeline" checked> Escala de tiempo</label>
+          <label class="toggle"><input type="checkbox" id="chkNames"> Nombres en barras</label>
+        </div>
+        <button class="big" id="btnColumns" title="Elegir columnas visibles"><span class="ico">▥</span>Columnas</button>
+      </div><div class="rlabel">Mostrar</div>
+    </div>
+    <div class="rgroup">
+      <div class="rbtns">
+        <div class="rcol">
+          <input id="filterText" type="search" placeholder="Buscar tarea…">
+          <select id="filterResource"><option value="">Todos los responsables</option></select>
+        </div>
+        <div class="rcol">
+          <label class="toggle"><input type="checkbox" id="filterCritical"> Solo críticas</label>
+          <label class="toggle"><input type="checkbox" id="filterIncomplete"> Solo pendientes</label>
+        </div>
+        <div class="rcol">
+          <select id="outlineLevel" title="Nivel de esquema">
+            <option value="0">Todas las subtareas</option>
+            <option value="1">Nivel 1</option>
+            <option value="2">Nivel 2</option>
+            <option value="3">Nivel 3</option>
+            <option value="4">Nivel 4</option>
+          </select>
+          <button id="btnExpandAll">Expandir todo</button>
+        </div>
+      </div><div class="rlabel">Datos</div>
+    </div>
+  </div>
+
+  <!-- Pestaña Proyecto -->
+  <div class="ribbon-panel" data-panel="project">
+    <div class="rgroup">
+      <div class="rbtns">
+        <button class="big" id="btnSettings" title="Información del proyecto"><span class="ico">⚙</span>Información</button>
+        <button class="big" id="btnCalendar" title="Calendario laboral y festivos"><span class="ico">📅</span>Calendario</button>
+        <button class="big" id="btnResources" title="Responsables y calendarios personales"><span class="ico">👥</span>Responsables</button>
+      </div><div class="rlabel">Propiedades</div>
+    </div>
+    <div class="rgroup">
+      <div class="rbtns">
+        <button class="big" id="btnBaseline" title="Guardar la planificación actual como línea base"><span class="ico">📌</span>Establecer<br>línea base</button>
+        <button class="big" id="btnClearBaseline" title="Borrar la línea base"><span class="ico">✕</span>Borrar<br>línea base</button>
+        <button class="big" id="btnStats" title="Estadísticas del proyecto"><span class="ico">📊</span>Estadísticas</button>
+      </div><div class="rlabel">Programación</div>
+    </div>
+  </div>
+
+  <!-- Pestaña Archivo -->
+  <div class="ribbon-panel file-panel" data-panel="file">
+    <div class="file-left">
+      <button id="btnNew">＋ Nuevo proyecto</button>
+      <button id="btnImport">⤓ Importar (JSON o XML de Project)</button>
+      <button id="btnDuplicate">⧉ Duplicar proyecto actual</button>
+      <hr>
+      <div class="file-h">Exportar</div>
+      <button data-export="json">💾 Guardar copia JSON</button>
+      <button data-export="xml">📁 XML de Microsoft Project</button>
+      <button data-export="csv">📄 CSV (Excel)</button>
+      <button data-export="png">🖼 Imagen PNG del Gantt</button>
+      <button data-export="svg">🖼 Imagen SVG del Gantt</button>
+      <button data-export="print">🖨 Imprimir / PDF</button>
+      <input type="file" id="fileImport" accept=".json,.xml" hidden>
+    </div>
+    <div class="file-right">
+      <div class="file-h">Proyectos guardados en este navegador</div>
+      <table class="mini" id="projTable"><thead><tr><th>Nombre</th><th>Inicio</th><th>Fin</th><th>Tareas</th><th>Modificado</th><th></th></tr></thead><tbody></tbody></table>
+      <div class="hint">Los proyectos se guardan automáticamente en este navegador. Exporta una copia JSON para llevarlos a otro equipo o compartirlos.</div>
+    </div>
+  </div>
+</nav>
+
+<!-- ======================= Escala de tiempo ======================= -->
+<section class="timeline" id="timeline"></section>
+
+<!-- ======================= Vista Gantt ======================= -->
+<main class="workspace" id="viewGantt">
   <section class="grid-pane" id="gridPane">
     <table class="grid" id="grid">
       <thead id="gridHead"></thead>
@@ -89,54 +207,98 @@
   </section>
 </main>
 
-<footer class="statusbar" id="statusbar"></footer>
+<!-- ======================= Vista Hoja de recursos ======================= -->
+<main class="workspace hidden" id="viewResources">
+  <section class="grid-pane" id="resPane">
+    <table class="grid" id="resGrid">
+      <thead><tr><th style="width:34px">#</th><th style="width:170px">Nombre</th><th style="width:120px">Rol</th><th style="width:150px">Calendario</th><th style="width:60px">Tareas</th><th style="width:70px">Días</th><th style="width:110px">Sobreasignado</th><th style="width:120px">Primera</th><th style="width:120px">Última</th></tr></thead>
+      <tbody id="resBody"></tbody>
+    </table>
+  </section>
+  <div class="splitter" id="splitter2"></div>
+  <section class="gantt-pane" id="resChartPane">
+    <div class="gantt-header" id="resHeader"></div>
+    <div class="gantt-body" id="resBodyChart"></div>
+  </section>
+</main>
 
-<!-- Diálogo: información de la tarea -->
+<!-- ======================= Barra de estado ======================= -->
+<footer class="statusbar">
+  <div id="statusbar" class="status-left"></div>
+  <div class="status-right">
+    <span id="statusMode">Nuevas tareas: programadas automáticamente</span>
+    <input type="range" id="zoomSlider" min="3" max="60" step="1" value="14" title="Zoom de la escala temporal">
+  </div>
+</footer>
+
+<!-- ======================= Menú contextual ======================= -->
+<div class="ctxmenu" id="ctxMenu"></div>
+
+<!-- ======================= Diálogos ======================= -->
 <dialog id="dlgTask">
   <form method="dialog" class="dlg">
-    <h2>Información de la tarea</h2>
-    <div class="form-grid">
-      <label>Nombre<input id="tName" required></label>
-      <label>Duración (días laborables)<input id="tDuration" type="number" min="0" step="1"></label>
-      <label>Restricción
-        <select id="tConstraint">
-          <option value="ASAP">Lo antes posible</option>
-          <option value="SNET">No comenzar antes del</option>
-          <option value="MSO">Debe comenzar el</option>
-        </select>
-      </label>
-      <label>Fecha de restricción<input id="tConstraintDate" type="date"></label>
-      <label>% completado<input id="tProgress" type="number" min="0" max="100" step="5"></label>
-      <label class="check"><input id="tMilestone" type="checkbox"> Es un hito</label>
-      <label class="check" style="grid-column:1 / -1"><input id="tIgnoreCal" type="checkbox"> Ignorar los calendarios personales de los responsables (usar solo el del proyecto)</label>
+    <h2 id="tTitle">Información de la tarea</h2>
+    <div class="tabs" id="tTabs">
+      <button type="button" data-tab="general" class="on">General</button>
+      <button type="button" data-tab="preds">Predecesoras</button>
+      <button type="button" data-tab="res">Responsables</button>
+      <button type="button" data-tab="adv">Avanzado</button>
+      <button type="button" data-tab="notes">Notas</button>
     </div>
-    <fieldset>
-      <legend>Predecesoras</legend>
+    <div class="tabpanel on" data-tab="general">
+      <div class="form-grid">
+        <label style="grid-column:1/3">Nombre<input id="tName" required></label>
+        <label>Duración (días laborables)<input id="tDuration" type="number" min="0" step="1"></label>
+        <label>% completado<input id="tProgress" type="number" min="0" max="100" step="5"></label>
+        <label class="check"><input id="tMilestone" type="checkbox"> Es un hito</label>
+        <label>Comienzo<input id="tStart" type="date"></label>
+        <label>Fin<input id="tFinish" type="date"></label>
+        <label>Prioridad<select id="tPriority"><option value="500">Normal</option><option value="700">Alta</option><option value="900">Muy alta</option><option value="300">Baja</option></select></label>
+      </div>
+      <div class="hint">Al escribir un comienzo se aplica la restricción «No comenzar antes del»; al escribir un fin se recalcula la duración.</div>
+    </div>
+    <div class="tabpanel" data-tab="preds">
       <table class="mini" id="tPredTable">
-        <thead><tr><th>Tarea</th><th>Tipo</th><th>Posposición (días)</th><th></th></tr></thead>
+        <thead><tr><th style="width:50px">Id</th><th>Nombre de tarea</th><th style="width:200px">Tipo</th><th style="width:120px">Posposición</th><th style="width:30px"></th></tr></thead>
         <tbody></tbody>
       </table>
       <button type="button" id="tAddPred" class="secondary">+ Añadir predecesora</button>
-    </fieldset>
-    <fieldset>
-      <legend>Responsables</legend>
+      <div class="hint">Posposición en días laborables; negativa para adelanto. Tipos: FC fin‑comienzo, CC comienzo‑comienzo, FF fin‑fin, CF comienzo‑fin.</div>
+      <div id="tSuccs" class="hint"></div>
+    </div>
+    <div class="tabpanel" data-tab="res">
       <div id="tResources" class="chips"></div>
-    </fieldset>
-    <label>Notas<textarea id="tNotes" rows="3"></textarea></label>
-    <div class="computed" id="tComputed"></div>
+      <label class="check"><input id="tIgnoreCal" type="checkbox"> Ignorar los calendarios personales de los responsables (usar solo el del proyecto)</label>
+    </div>
+    <div class="tabpanel" data-tab="adv">
+      <div class="form-grid">
+        <label>Fecha límite<input id="tDeadline" type="date"></label>
+        <label>Tipo de restricción
+          <select id="tConstraint">
+            <option value="ASAP">Lo antes posible</option>
+            <option value="SNET">No comenzar antes del</option>
+            <option value="MSO">Debe comenzar el</option>
+          </select>
+        </label>
+        <label>Fecha de restricción<input id="tConstraintDate" type="date"></label>
+      </div>
+      <div class="computed" id="tComputed"></div>
+    </div>
+    <div class="tabpanel" data-tab="notes">
+      <label>Notas<textarea id="tNotes" rows="8"></textarea></label>
+    </div>
     <div class="actions">
-      <button type="button" value="cancel" class="secondary" id="tCancel">Cancelar</button>
-      <button type="submit" value="ok" class="primary">Aceptar</button>
+      <button type="button" class="secondary" id="tCancel">Cancelar</button>
+      <button type="submit" class="primary">Aceptar</button>
     </div>
   </form>
 </dialog>
 
-<!-- Diálogo: responsables -->
 <dialog id="dlgResources">
   <form method="dialog" class="dlg">
     <h2>Responsables</h2>
     <table class="mini" id="rTable">
-      <thead><tr><th>Nombre</th><th>Rol</th><th>Color</th><th>Calendario</th><th></th></tr></thead>
+      <thead><tr><th>Nombre</th><th>Rol</th><th style="width:60px">Color</th><th>Calendario</th><th style="width:30px"></th></tr></thead>
       <tbody></tbody>
     </table>
     <button type="button" id="rAdd" class="secondary">+ Añadir responsable</button>
@@ -147,25 +309,32 @@
   </form>
 </dialog>
 
-<!-- Diálogo: proyecto -->
 <dialog id="dlgSettings">
   <form method="dialog" class="dlg">
-    <h2>Configuración del proyecto</h2>
-    <div class="form-grid">
-      <label>Nombre<input id="pName"></label>
-      <label>Fecha de inicio<input id="pStart" type="date"></label>
+    <h2>Información del proyecto</h2>
+    <div class="tabs" id="pTabs">
+      <button type="button" data-tab="general" class="on">General</button>
+      <button type="button" data-tab="calendar">Calendario laboral</button>
     </div>
-    <div id="pCalendar" class="cal-editor"></div>
+    <div class="tabpanel on" data-tab="general">
+      <div class="form-grid">
+        <label style="grid-column:1/3">Nombre<input id="pName"></label>
+        <label>Fecha de inicio<input id="pStart" type="date"></label>
+        <label>Fecha de estado (línea de progreso)<input id="pStatusDate" type="date"></label>
+        <label style="grid-column:1/-1">Descripción<textarea id="pNotes" rows="3"></textarea></label>
+      </div>
+      <div class="computed" id="pComputed"></div>
+    </div>
+    <div class="tabpanel" data-tab="calendar">
+      <div id="pCalendar" class="cal-editor"></div>
+    </div>
     <div class="actions">
-      <button type="button" class="secondary danger" id="pReset">Nuevo proyecto en blanco</button>
-      <span class="spacer"></span>
       <button type="button" class="secondary" id="pCancel">Cancelar</button>
       <button type="submit" class="primary">Aceptar</button>
     </div>
   </form>
 </dialog>
 
-<!-- Diálogo: calendario personal de un responsable -->
 <dialog id="dlgCalendar">
   <form method="dialog" class="dlg">
     <h2 id="cTitle">Calendario personal</h2>
@@ -178,6 +347,49 @@
   </form>
 </dialog>
 
+<dialog id="dlgColumns">
+  <form method="dialog" class="dlg narrow">
+    <h2>Columnas de la tabla</h2>
+    <div id="colList" class="col-list"></div>
+    <div class="actions">
+      <button type="button" class="secondary" id="colReset">Restablecer</button>
+      <span class="spacer"></span>
+      <button type="submit" class="primary">Aceptar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlgStats">
+  <form method="dialog" class="dlg narrow">
+    <h2>Estadísticas del proyecto</h2>
+    <div id="statsBody"></div>
+    <div class="actions"><button type="submit" class="primary">Cerrar</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlgHelp">
+  <form method="dialog" class="dlg narrow">
+    <h2>Atajos de teclado</h2>
+    <table class="mini keys">
+      <tr><td><kbd>Insert</kbd></td><td>Nueva tarea debajo de la seleccionada</td></tr>
+      <tr><td><kbd>Supr</kbd></td><td>Eliminar tareas seleccionadas</td></tr>
+      <tr><td><kbd>F2</kbd> / <kbd>Enter</kbd> / escribir</td><td>Editar la celda activa</td></tr>
+      <tr><td><kbd>Mayús</kbd>+<kbd>F2</kbd> / doble clic en #</td><td>Información de la tarea</td></tr>
+      <tr><td><kbd>Tab</kbd> / <kbd>Mayús</kbd>+<kbd>Tab</kbd></td><td>Celda siguiente / anterior</td></tr>
+      <tr><td><kbd>Alt</kbd>+<kbd>Mayús</kbd>+<kbd>→</kbd> / <kbd>←</kbd></td><td>Aplicar / anular sangría</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>F2</kbd> / <kbd>Ctrl</kbd>+<kbd>Mayús</kbd>+<kbd>F2</kbd></td><td>Vincular / desvincular selección</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>Mayús</kbd>+<kbd>F5</kbd></td><td>Desplazarse a la tarea en el Gantt</td></tr>
+      <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd></td><td>Moverse por las celdas (<kbd>Mayús</kbd> extiende la selección)</td></tr>
+      <tr><td><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>→</kbd></td><td>Contraer / expandir resumen</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td>Deshacer / rehacer</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>−</kbd></td><td>Acercar / alejar escala temporal</td></tr>
+      <tr><td>Clic derecho</td><td>Menú contextual en la tabla y en el Gantt</td></tr>
+      <tr><td>Arrastrar barra / borde / círculo</td><td>Mover tarea / cambiar duración / crear vínculo</td></tr>
+    </table>
+    <div class="actions"><button type="submit" class="primary">Cerrar</button></div>
+  </form>
+</dialog>
+
 <div class="toast" id="toast"></div>
 
 <script src="js/utils.js"></script>
@@ -187,6 +399,8 @@
 <script src="js/caleditor.js"></script>
 <script src="js/table.js"></script>
 <script src="js/gantt.js"></script>
+<script src="js/timeline.js"></script>
+<script src="js/resources.js"></script>
 <script src="js/exporters.js"></script>
 <script src="js/app.js"></script>
 </body>

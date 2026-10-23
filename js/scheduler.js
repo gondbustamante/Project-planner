@@ -180,17 +180,36 @@ const Scheduler = (() => {
           }
         }
       }
+      // Fecha límite: acota el fin límite (como en Project puede generar holgura negativa)
+      const dl = t.deadline ? U.toDay(t.deadline) : null;
+      if (dl != null && dl < lf) lf = dl;
       c.lf = tc.prev(lf);
       c.ls = d <= 0 ? c.lf : tc.add(c.lf, -(d - 1));
       c.slack = tc.count(c.es, c.ls);
       c.critical = c.slack <= 0;
+      c.deadlineMissed = dl != null && c.ef > dl;
+      // Holgura libre: cuánto puede retrasarse sin mover el comienzo temprano de ninguna sucesora
+      let ffb = projFinish;
+      if (!inCycle.has(i)) for (const s of succs[i]) for (const l of leavesOf(s.si)) {
+        const sc = C[l], scal = sc.cal || cal; let b;
+        switch (s.type) {
+          case 'SS': b = finishOf(tc.prev(scal.add(sc.es, -s.lag)), d, tc); break;
+          case 'FF': b = tc.prev(scal.add(sc.ef, -s.lag)); break;
+          case 'SF': b = finishOf(tc.prev(scal.add(sc.ef, 1 - s.lag)), d, tc); break;
+          default: b = tc.prev(scal.add(sc.es, -s.lag) - 1);
+        }
+        if (b < ffb) ffb = b;
+      }
+      c.freeSlack = Math.max(0, Math.min(c.slack, tc.count(c.ef, tc.prev(ffb))));
     }
     for (const i of byLevelDesc) {
       const kids = ol.children[i];
       C[i].ls = Math.min(...kids.map(k => C[k].ls));
       C[i].lf = Math.max(...kids.map(k => C[k].lf));
       C[i].slack = Math.min(...kids.map(k => C[k].slack));
+      C[i].freeSlack = Math.min(...kids.map(k => C[k].freeSlack));
       C[i].critical = kids.some(k => C[k].critical);
+      C[i].deadlineMissed = tasks[i].deadline ? C[i].ef > U.toDay(tasks[i].deadline) : false;
       C[i].error = kids.some(k => C[k].error) ? 'Contiene dependencias circulares' : null;
     }
 
@@ -207,7 +226,10 @@ const Scheduler = (() => {
       } else if (t.milestone) { t.duration = 0; }
     }
 
-    return { C, outline: ol, cal, projStart, projFinish, idx, leavesOf, ancestors,
+    // Sucesoras directas de cada tarea (para la columna y el diálogo)
+    const successors = tasks.map(() => []);
+    for (let i = 0; i < n; i++) for (const p of tasks[i].predecessors) successors[idx.get(p.id)].push({ id: tasks[i].id, type: p.type, lag: p.lag });
+    return { C, outline: ol, cal, projStart, projFinish, idx, leavesOf, ancestors, successors,
       duration: cal.duration(projStart, projFinish), errors: C.filter(c => c.error).length };
   }
 

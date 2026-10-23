@@ -12,32 +12,32 @@ Aplicación web ligera, sin instalación ni servidor, para crear y gestionar cro
 
 | Área | Qué incluye |
 |---|---|
-| Tareas | Crear, eliminar, mover arriba/abajo, aplicar o anular sangría (resúmenes / subtareas en varios niveles), contraer y expandir, numeración EDT automática. |
-| Programación | Motor de ruta crítica (CPM): paso adelante y atrás, comienzo y fin tempranos y límite, holgura total y marcado de tareas críticas. Las duraciones son en días laborables. |
-| Calendarios | **Calendario del proyecto**: días laborables de la semana y excepciones con rango de fechas y descripción (festivos, cierres, días laborables extra), con un botón para cargar los festivos nacionales de España de cualquier año. **Calendarios personales** por responsable (vacaciones, permisos, jornada de 4 días…): parten del calendario del proyecto y sus excepciones prevalecen. Una tarea se programa solo en los días en que todos sus responsables trabajan; en el Gantt esos días no laborables se sombrean en amarillo. En la información de la tarea se puede marcar «Ignorar los calendarios personales». Los calendarios viajan también en el XML de Project. |
-| Dependencias | Fin‑Comienzo (FC), Comienzo‑Comienzo (CC), Fin‑Fin (FF) y Comienzo‑Fin (CF) con posposición positiva o negativa. Se crean desde el diálogo de la tarea, escribiendo en la columna «Predecesoras» (`3; 5CC+2d`), con el botón «Vincular» sobre varias tareas seleccionadas o arrastrando desde el círculo al final de una barra hasta otra. Detecta y señala dependencias circulares. |
-| Restricciones | Lo antes posible, No comenzar antes del, Debe comenzar el. Al escribir una fecha de comienzo o arrastrar una barra se aplica «No comenzar antes del», como hace Project. |
-| Hitos | Tareas de duración 0, dibujadas como rombo con fecha. |
-| Responsables | Lista de responsables con rol y color, asignación múltiple por tarea y filtro por responsable. |
-| Seguimiento | % completado por tarea (los resúmenes lo calculan ponderado por duración), línea base guardable y visible en el Gantt, línea de «hoy». |
-| Gantt | Escalas de días, semanas y meses; arrastrar barras para moverlas o redimensionarlas; flechas de dependencias; ruta crítica en rojo. |
-| Exportación | JSON (copia completa), XML de Microsoft Project (abre en Project, ProjectLibre, etc.), CSV para Excel, imagen PNG o SVG del Gantt, impresión/PDF. |
-| Importación | JSON propio y XML de Microsoft Project (tareas, esquema, dependencias, restricciones, recursos y asignaciones). |
-| Otros | Deshacer/rehacer ilimitado, búsqueda, filtro «solo críticas», atajos de teclado. |
+| Interfaz | Cinta de opciones con pestañas **Archivo, Tarea, Vista y Proyecto** al estilo Project; barra de título con el proyecto; escala de tiempo (fases e hitos) sobre el Gantt; barra de estado con zoom deslizante; menú contextual con el botón derecho; diálogos con pestañas. |
+| Hoja de tareas | Celda activa con navegación por teclado y edición al escribir (como Excel/Project), columna de indicadores (notas, restricciones, fecha límite, calendario personal, completada, error), columnas configurables y redimensionables (EDT, sucesoras, holgura total y libre, fechas límite, restricción, línea base, variación, prioridad, notas…), numeración EDT, nivel de esquema. |
+| Tareas | Crear tareas, hitos y **resúmenes sobre la selección**, eliminar, mover, sangría, contraer/expandir, botones rápidos de % completado, fechas límite, prioridad, notas. |
+| Programación | Motor de ruta crítica (CPM): fechas tempranas y límite, holgura total y **libre**, tareas críticas; las fechas límite acotan el fin límite como en Project. Duraciones en días laborables. |
+| Calendarios | Calendario del proyecto con excepciones por rango y descripción (festivos, cierres, días extra) y preajuste de festivos nacionales de España. **Calendarios personales** por responsable que heredan del proyecto; cada tarea se programa en la intersección de los calendarios de sus responsables y los días no laborables se sombrean en el Gantt. |
+| Dependencias | FC, CC, FF y CF con posposición. Desde el diálogo, escribiendo en la columna (`3; 5CC+2d`), con «Vincular» o arrastrando entre barras. Detección de ciclos. |
+| Gantt | Zoom continuo (de días a trimestres, con Ctrl+rueda), ajustar proyecto completo, barras arrastrables, flechas de dependencias, ruta crítica, **barras de holgura**, **ruta de tareas** (predecesoras en naranja y sucesoras en morado de la tarea seleccionada), línea base, marcadores de fecha límite, línea de hoy y de fecha de estado, nombres en barras, tooltips. |
+| Responsables | Lista con rol, color y calendario personal; asignación múltiple; filtro por responsable; **hoja de recursos** con tareas y días asignados, primera y última fecha, y gráfico semanal de carga con **sobreasignación** resaltada. |
+| Seguimiento | % completado (ponderado en resúmenes), línea base con variación, estadísticas del proyecto, fecha de estado, filtros de críticas y pendientes. |
+| Archivo | Varios proyectos guardados en el navegador (abrir, duplicar, eliminar). Exportación a JSON, **XML de Microsoft Project** (con calendarios, fechas límite y prioridades), CSV, PNG, SVG e impresión/PDF en vista dedicada. Importación de JSON y XML de Project. |
+| Otros | Deshacer/rehacer, búsqueda, preferencias de vista persistentes, atajos de teclado (ver «? Atajos» en la cinta). |
 
 ## Atajos de teclado
 
 | Tecla | Acción |
 |---|---|
-| `Insert` | Nueva tarea debajo de la seleccionada |
-| `Supr` | Eliminar tarea(s) seleccionada(s) |
-| `Tab` / `Shift+Tab` | Aplicar / anular sangría |
-| `Enter` | Abrir la información de la tarea |
-| `F2` | Editar el nombre en línea |
-| `↑` / `↓` (+`Shift`) | Moverse por la lista (y extender la selección) |
-| `←` / `→` | Contraer / expandir un resumen |
+| `Insert` / `Supr` | Nueva tarea / eliminar |
+| `F2`, `Enter` o escribir | Editar la celda activa |
+| `Mayús+F2` | Información de la tarea |
+| `Tab`, flechas | Moverse por las celdas (`Mayús` extiende la selección) |
+| `Alt+Mayús+→` / `←` | Aplicar / anular sangría |
+| `Alt+←` / `→` | Contraer / expandir resumen |
+| `Ctrl+F2` / `Ctrl+Mayús+F2` | Vincular / desvincular |
+| `Ctrl+Mayús+F5` | Desplazarse a la tarea en el Gantt |
 | `Ctrl+Z` / `Ctrl+Y` | Deshacer / rehacer |
-| Doble clic en una celda | Editar en línea (nombre, duración, fechas, predecesoras, responsables, %) |
+| `Ctrl++` / `Ctrl+-`, `Ctrl+rueda` | Zoom de la escala temporal |
 
 ## Estructura del código
 
@@ -49,10 +49,12 @@ js/calendar.js    Calendarios laborales (días, excepciones, calendarios compues
 js/scheduler.js   Esquema EDT y motor CPM (dependencias, restricciones, holguras, ruta crítica)
 js/store.js       Estado, deshacer/rehacer, guardado local, proyecto de ejemplo
 js/caleditor.js   Editor de calendarios (proyecto y responsables)
-js/table.js       Hoja de tareas con edición en línea
-js/gantt.js       Gantt en SVG e interacción (arrastrar, redimensionar, vincular)
+js/table.js       Hoja de tareas: celda activa, columnas, indicadores, edición
+js/gantt.js       Gantt en SVG: escala, barras, holgura, ruta de tareas, interacción
+js/timeline.js    Escala de tiempo (fases e hitos)
+js/resources.js   Hoja de recursos y carga semanal
 js/exporters.js   Exportación e importación
-js/app.js         Controlador: toolbar, diálogos, filtros, teclado
+js/app.js         Controlador: cinta, vistas, menú contextual, diálogos, teclado
 ```
 
 No hay dependencias ni paso de compilación: son archivos estáticos.
