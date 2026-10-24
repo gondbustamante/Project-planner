@@ -42,7 +42,28 @@ const Store = (() => {
     for (const t of p.tasks) for (const k of Object.keys(t.baselines)) if (!p.baselines[k]) p.baselines[k] = { date: null };
     if (U.toDay(p.start) == null) p.start = U.fromDay(U.today());
     if (!p.id) p.id = U.uid();
+    p.timeline = normalizeTimeline(p.timeline, p.tasks);
     return p;
+  }
+
+  /** Configuración de la escala de tiempo: rango y unidad del eje, reglas automáticas, elección por tarea (mostrar, color, texto) y etiquetas libres */
+  function normalizeTimeline(tl, tasks) {
+    const hex = c => /^#[0-9a-f]{6}$/i.test(c || '');
+    tl = Object.assign({ range: 'auto', start: null, finish: null, unit: 'auto', autoPhases: true, autoMilestones: true, showToday: true, showDates: true, showProgress: true, items: {}, labels: [] }, tl && typeof tl === 'object' ? tl : {});
+    if (tl.range !== 'custom') tl.range = 'auto';
+    tl.start = U.toDay(tl.start) == null ? null : U.fromDay(U.toDay(tl.start));
+    tl.finish = U.toDay(tl.finish) == null ? null : U.fromDay(U.toDay(tl.finish));
+    for (const k of ['autoPhases', 'autoMilestones', 'showToday', 'showDates', 'showProgress']) tl[k] = !!tl[k];
+    const ids = new Set(tasks.map(t => t.id)); const items = {};
+    for (const [id, it] of Object.entries(tl.items || {})) {
+      if (!ids.has(id) || !it || typeof it !== 'object') continue;
+      const x = {}; if (typeof it.show === 'boolean') x.show = it.show; if (hex(it.color)) x.color = it.color; if (it.label) x.label = String(it.label);
+      if (Object.keys(x).length) items[id] = x;
+    }
+    tl.items = items;
+    tl.labels = (Array.isArray(tl.labels) ? tl.labels : []).filter(l => l && U.toDay(l.date) != null && String(l.text || '').trim())
+      .map(l => ({ id: l.id || U.uid(), date: U.fromDay(U.toDay(l.date)), text: String(l.text).trim(), color: hex(l.color) ? l.color : '#0f766e' }));
+    return tl;
   }
 
   /** Normaliza un calendario: {workDays, exceptions:[{from,to,name,working}]}. Acepta el formato antiguo (holidays: ['AAAA-MM-DD']). */
@@ -83,6 +104,7 @@ const Store = (() => {
     add('Plan de comunicación', 2, 10, { predecessors: fs(4), resources: [sara] });
     add('Lanzamiento', 2, 0, { milestone: true, predecessors: fs(15, 16), deadline: '2027-01-29', notes: 'Fecha comprometida con Dirección.' });
     T[2].notes = 'Entrevistas con los 5 clientes clave y el equipo de soporte.';
+    p.timeline = normalizeTimeline({ labels: [{ date: '2026-12-15', text: 'Demo a clientes', color: '#0f766e' }] }, p.tasks);
     return p;
   }
 
@@ -177,7 +199,7 @@ const Store = (() => {
     get project() { return project; }, get computed() { return computed; }, get selection() { return selection; },
     get canUndo() { return undoStack.length > 0; }, get canRedo() { return redoStack.length > 0; }, get saved() { return saved; },
     listProjects, openProject, deleteProject, createProject, setPref, getPref,
-    newTask, newResource, blank, normalize, normalizeCalendar, sample, load, save, recompute, mutate, undo, redo, subscribe, emit,
+    newTask, newResource, blank, normalize, normalizeCalendar, normalizeTimeline, sample, load, save, recompute, mutate, undo, redo, subscribe, emit,
     select, selectRange, selectedIndices, taskById, indexOf, blockEnd, isAncestor
   };
 })();

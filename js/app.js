@@ -178,6 +178,95 @@ const App = (() => {
   function setCollapsedAll(v) { Store.mutate(p => { const ol = Store.computed.outline; p.tasks.forEach((t, i) => { if (ol.isSummary[i]) t.collapsed = v; }); }); }
   function scrollToSelected() { const idx = Store.selectedIndices(); if (!idx.length) return; Gantt.scrollToTask(idx[0]); Table.scrollToRow(idx[0]); }
 
+  // ---------- escala de tiempo ----------
+  /** Añade o quita de la escala de tiempo las tareas seleccionadas */
+  function toggleTimelineSelected() {
+    const idx = Store.selectedIndices(); if (!idx.length) return;
+    const tl = Store.project.timeline; const all = idx.every(i => Timeline.isShown(Store.project.tasks[i], tl));
+    Store.mutate(p => { for (const i of idx) { const id = p.tasks[i].id; p.timeline.items[id] = Object.assign({}, p.timeline.items[id], { show: !all }); } });
+    if (!options.timeline) { options.timeline = true; $('chkTimeline').checked = true; Store.setPref('opt.timeline', true); refresh(); }
+    toast(`${idx.length} tarea(s) ${all ? 'quitada(s) de' : 'añadida(s) a'} la escala de tiempo`);
+  }
+  function openTimelineDialog(tab = 'items', focusId = null) {
+    const dlg = $('dlgTimeline'); showTab($('tlTabs'), dlg, tab);
+    const { project, computed } = Store; const tasks = project.tasks, C = computed.C, ol = computed.outline;
+    const draft = JSON.parse(JSON.stringify(project.timeline));
+    const tb = $('tlItems').querySelector('tbody');
+    const autoOf = t => t.milestone ? draft.autoMilestones : draft.autoPhases && t.level === 1;
+    const item = id => draft.items[id] || (draft.items[id] = {});
+    const drawItems = () => {
+      const defs = Timeline.defaultColors(draft); const q = $('tlSearch').value.trim().toLowerCase();
+      tb.innerHTML = tasks.map((t, i) => {
+        if (q && !t.name.toLowerCase().includes(q)) return '';
+        const it = draft.items[t.id] || {}; const on = Timeline.isShown(t, draft); const manual = typeof it.show === 'boolean' || it.color || it.label;
+        return `<tr data-id="${t.id}" class="${ol.isSummary[i] ? 'summary' : ''} ${on ? '' : 'off'} ${t.id === focusId ? 'focus' : ''}">`
+          + `<td><input type="checkbox" class="tl-show" ${on ? 'checked' : ''}>${manual ? '<span class="auto" title="Elección manual">★</span>' : ''}</td><td>${i + 1}</td>`
+          + `<td class="tl-name" title="${U.esc(t.name)}"><span style="display:inline-block;width:${(t.level - 1) * 12}px"></span>${t.milestone ? '◆ ' : ''}${U.esc(t.name)}</td>`
+          + `<td class="hint">${t.milestone ? U.fmt(C[i].es) : U.fmt(C[i].es).slice(0, 5) + ' – ' + U.fmt(C[i].ef).slice(0, 5)}</td>`
+          + `<td><input type="color" class="tl-color ${it.color ? '' : 'tl-color-auto'}" value="${it.color || defs.get(t.id)}" title="${it.color ? 'Color personalizado' : 'Color automático'}"></td>`
+          + `<td><input class="tl-text" value="${U.esc(it.label || '')}" placeholder="${U.esc(t.name)}"></td>`
+          + `<td><button type="button" class="link tl-reset" title="Volver a lo automático" ${manual ? '' : 'disabled'}>↺</button></td></tr>`;
+      }).join('') || '<tr><td colspan="7" class="hint">No hay tareas.</td></tr>';
+      tb.querySelectorAll('tr[data-id]').forEach(tr => {
+        const id = tr.dataset.id, t = tasks[Store.indexOf(id)];
+        tr.querySelector('.tl-show').onchange = e => { const v = e.target.checked; if (v === autoOf(t)) delete item(id).show; else item(id).show = v; drawItems(); };
+        const mark = () => { const it = draft.items[id] || {}; const manual = typeof it.show === 'boolean' || it.color || it.label; const td = tr.querySelector('td'); const star = td.querySelector('.auto'); if (manual && !star) td.insertAdjacentHTML('beforeend', '<span class="auto" title="Elección manual">★</span>'); else if (!manual && star) star.remove(); tr.querySelector('.tl-reset').disabled = !manual; };
+        tr.querySelector('.tl-color').oninput = e => { item(id).color = e.target.value; e.target.classList.remove('tl-color-auto'); e.target.title = 'Color personalizado'; mark(); };
+        tr.querySelector('.tl-text').onchange = e => { const v = e.target.value.trim(); if (v && v !== t.name) item(id).label = v; else delete item(id).label; mark(); };
+        tr.querySelector('.tl-reset').onclick = () => { delete draft.items[id]; drawItems(); };
+      });
+      const f = tb.querySelector('tr.focus'); if (f) { f.scrollIntoView({ block: 'center' }); focusId = null; }
+    };
+    $('tlAutoPhases').checked = draft.autoPhases; $('tlAutoMilestones').checked = draft.autoMilestones;
+    $('tlAutoPhases').onchange = e => { draft.autoPhases = e.target.checked; drawItems(); };
+    $('tlAutoMilestones').onchange = e => { draft.autoMilestones = e.target.checked; drawItems(); };
+    $('tlSearch').value = ''; $('tlSearch').oninput = drawItems;
+    $('tlQuick').value = '';
+    $('tlQuick').onchange = e => {
+      const v = e.target.value; e.target.value = ''; if (!v) return;
+      const want = { milestones: (t, i) => t.milestone || Timeline.isShown(t, draft), summaries: (t, i) => ol.isSummary[i] || Timeline.isShown(t, draft), level2: (t, i) => t.level <= 2, critical: (t, i) => C[i].critical && !ol.isSummary[i], none: () => false }[v];
+      tasks.forEach((t, i) => {
+        if (v === 'reset') { if (draft.items[t.id]) delete draft.items[t.id].show; return; }
+        const on = want(t, i); if (on === autoOf(t)) delete item(t.id).show; else item(t.id).show = on;
+      });
+      drawItems();
+    };
+    // etiquetas
+    const lb = $('tlLabels').querySelector('tbody');
+    const labelRow = (l = { id: U.uid(), date: U.fromDay(Math.max(computed.projStart, Math.min(U.today(), computed.projFinish))), text: '', color: '#0f766e' }) => {
+      const tr = document.createElement('tr'); tr.dataset.id = l.id;
+      tr.innerHTML = `<td><input type="date" class="l-date" value="${l.date}"></td><td><input class="l-text" value="${U.esc(l.text)}" placeholder="Texto de la etiqueta"></td><td><input type="color" class="l-color" value="${l.color}"></td><td><button type="button" class="link l-del" title="Quitar">✕</button></td>`;
+      tr.querySelector('.l-del').onclick = () => tr.remove();
+      lb.appendChild(tr); return tr;
+    };
+    lb.innerHTML = ''; draft.labels.forEach(l => labelRow(l));
+    $('tlAddLabel').onclick = () => labelRow().querySelector('.l-text').focus();
+    // eje y formato
+    $('tlUnit').innerHTML = Object.entries(Timeline.UNITS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+    $('tlRange').value = draft.range; $('tlUnit').value = draft.unit;
+    $('tlStart').value = draft.start || U.fromDay(computed.projStart); $('tlFinish').value = draft.finish || U.fromDay(computed.projFinish);
+    const syncRange = () => { const c = $('tlRange').value === 'custom'; $('tlStart').disabled = !c; $('tlFinish').disabled = !c; };
+    $('tlRange').onchange = syncRange; syncRange();
+    $('tlShowDates').checked = draft.showDates; $('tlShowProgress').checked = draft.showProgress; $('tlShowToday').checked = draft.showToday;
+    drawItems();
+    dlg.querySelector('form').onsubmit = ev => {
+      ev.preventDefault();
+      draft.range = $('tlRange').value; draft.unit = $('tlUnit').value;
+      if (draft.range === 'custom') {
+        const a = U.toDay($('tlStart').value), b = U.toDay($('tlFinish').value);
+        if (a == null || b == null || b <= a) { toast('El rango personalizado necesita «Desde» anterior a «Hasta»'); showTab($('tlTabs'), dlg, 'scale'); return; }
+        draft.start = U.fromDay(a); draft.finish = U.fromDay(b);
+      }
+      draft.showDates = $('tlShowDates').checked; draft.showProgress = $('tlShowProgress').checked; draft.showToday = $('tlShowToday').checked;
+      draft.labels = [...lb.querySelectorAll('tr')].map(tr => ({ id: tr.dataset.id, date: tr.querySelector('.l-date').value, text: tr.querySelector('.l-text').value.trim(), color: tr.querySelector('.l-color').value })).filter(l => l.text && U.toDay(l.date) != null);
+      Store.mutate(p => { p.timeline = Store.normalizeTimeline(draft, p.tasks); });
+      if (!options.timeline) { options.timeline = true; $('chkTimeline').checked = true; Store.setPref('opt.timeline', true); refresh(); }
+      dlg.close();
+    };
+    $('tlCancel').onclick = () => dlg.close();
+    dlg.showModal();
+  }
+
   // ---------- menú contextual ----------
   function showContextMenu(x, y, id) {
     const m = $('ctxMenu'); const has = !!id; const i = has ? Store.indexOf(id) : -1; const sum = has && Store.computed.outline.isSummary[i];
@@ -197,6 +286,9 @@ const App = (() => {
       ['🔗', 'Vincular tareas seleccionadas', linkSelected, Store.selection.length > 1, 'Ctrl+F2'],
       ['⛓', 'Desvincular', unlinkSelected, has, 'Ctrl+Mayús+F2'],
       ['✔', 'Marcar 100 % completada', () => setProgress(100), has],
+      null,
+      ['⏱', has && Store.selectedIndices().every(k => Timeline.isShown(Store.project.tasks[k])) ? 'Quitar de la escala de tiempo' : 'Añadir a la escala de tiempo', toggleTimelineSelected, has],
+      ['🎨', 'Editar escala de tiempo…', () => openTimelineDialog('items', id), true],
       null,
       ['⌖', 'Desplazarse a la tarea', scrollToSelected, has, 'Ctrl+Mayús+F5'],
     ];
@@ -454,6 +546,7 @@ const App = (() => {
     $('btnZoomIn').onclick = () => Gantt.zoomBy(1.25); $('btnZoomOut').onclick = () => Gantt.zoomBy(0.8); $('btnFit').onclick = () => Gantt.fit();
     $('btnToday').onclick = () => Gantt.scrollToDay(U.today());
     $('btnColumns').onclick = openColumns;
+    $('btnTimelineEdit').onclick = () => openTimelineDialog();
     $('btnResources').onclick = openResources; $('btnSettings').onclick = () => openSettings('general'); $('btnCalendar').onclick = () => openSettings('calendar');
     $('btnHelp').onclick = () => $('dlgHelp').showModal();
     $('btnNew').onclick = () => { Store.createProject(); showRibbonTab('task'); openSettings('general'); };
@@ -467,7 +560,7 @@ const App = (() => {
     $('filterIncomplete').onchange = e => { filter.incomplete = e.target.checked; refresh(); };
     $('outlineLevel').onchange = e => { filter.level = +e.target.value; refresh(); };
     $('btnExpandAll').onclick = () => { $('outlineLevel').value = '0'; filter.level = 0; setCollapsedAll(false); };
-    wireTabs($('tTabs'), $('dlgTask')); wireTabs($('pTabs'), $('dlgSettings'));
+    wireTabs($('tTabs'), $('dlgTask')); wireTabs($('pTabs'), $('dlgSettings')); wireTabs($('tlTabs'), $('dlgTimeline'));
     document.addEventListener('mousedown', e => { if (!e.target.closest('#ctxMenu')) hideContextMenu(); });
     window.addEventListener('blur', hideContextMenu);
 
@@ -486,5 +579,5 @@ const App = (() => {
   }
 
   document.addEventListener('DOMContentLoaded', init);
-  return { options, filter, refresh, visibleRows, toast, setStatusHint, syncZoomUI, addTask, addSummary, deleteSelected, indent, move, addLink, linkSelected, unlinkSelected, setProgress, saveBaseline, clearBaseline, openBaselines, setBaselineView, openTaskDialog, openResources, openSettings, openResourceCalendar, showContextMenu, hideContextMenu, setView };
+  return { options, filter, refresh, visibleRows, toast, setStatusHint, syncZoomUI, addTask, addSummary, deleteSelected, indent, move, addLink, linkSelected, unlinkSelected, setProgress, saveBaseline, clearBaseline, openBaselines, setBaselineView, openTimelineDialog, toggleTimelineSelected, openTaskDialog, openResources, openSettings, openResourceCalendar, showContextMenu, hideContextMenu, setView };
 })();

@@ -12,7 +12,7 @@ Aplicación web ligera, sin instalación ni servidor, para crear y gestionar cro
 
 | Área | Qué incluye |
 |---|---|
-| Interfaz | Cinta de opciones con pestañas **Archivo, Tarea, Vista y Proyecto** al estilo Project; barra de título con el proyecto; escala de tiempo (fases e hitos) sobre el Gantt; barra de estado con zoom deslizante; menú contextual con el botón derecho; diálogos con pestañas. |
+| Interfaz | Cinta de opciones con pestañas **Archivo, Tarea, Vista y Proyecto** al estilo Project; barra de título con el proyecto; **escala de tiempo editable** sobre el Gantt (ver abajo); barra de estado con zoom deslizante; menú contextual con el botón derecho; diálogos con pestañas. |
 | Hoja de tareas | Celda activa con navegación por teclado y edición al escribir (como Excel/Project), columna de indicadores (notas, restricciones, fecha límite, calendario personal, completada, error), columnas configurables y redimensionables (EDT, sucesoras, holgura total y libre, fechas límite, restricción, línea base, variación, prioridad, notas…), numeración EDT, nivel de esquema. |
 | Tareas | Crear tareas, hitos y **resúmenes sobre la selección**, eliminar, mover, sangría, contraer/expandir, botones rápidos de % completado, fechas límite, prioridad, notas. |
 | Programación | Motor de ruta crítica (CPM): fechas tempranas y límite, holgura total y **libre**, tareas críticas; las fechas límite acotan el fin límite como en Project. Duraciones en días laborables. |
@@ -22,6 +22,7 @@ Aplicación web ligera, sin instalación ni servidor, para crear y gestionar cro
 | Responsables | Lista con rol, color y calendario personal; asignación múltiple; filtro por responsable; **hoja de recursos** con tareas y días asignados, primera y última fecha, y gráfico semanal de carga con **sobreasignación** resaltada. |
 | Seguimiento | % completado (ponderado en resúmenes), **hasta 11 líneas base** (Línea base y Línea base 1 a 10, como en Project) que se pueden guardar para todo el proyecto o solo para las tareas seleccionadas, mostrar a la vez en el Gantt con colores distintos y elegir cuál se compara en columnas, estadísticas y barra de estado. Fecha de estado, filtros de críticas y pendientes. |
 | Archivo | Varios proyectos guardados en el navegador (abrir, duplicar, eliminar). Exportación a JSON, **XML de Microsoft Project** (con calendarios, fechas límite y prioridades), CSV, PNG, SVG e impresión/PDF en vista dedicada. Importación de JSON y XML de Project. |
+| Escala de tiempo | «Vista → Editar escala de tiempo», doble clic sobre ella o menú contextual («Añadir/Quitar de la escala de tiempo»). Elige qué tareas, resúmenes e hitos aparecen (reglas automáticas para fases de nivel 1 e hitos, elección manual por tarea y selección rápida: todos los hitos, niveles 1 y 2, ruta crítica…), **color** y **texto** propios de cada elemento, **etiquetas** libres en fechas clave, y el eje: rango automático o personalizado y unidad (semanas, meses, trimestres, años), fechas, % completado y línea de hoy. Se guarda con el proyecto y se exporta en el JSON. |
 | Otros | Deshacer/rehacer, búsqueda, preferencias de vista persistentes, atajos de teclado (ver «? Atajos» en la cinta). |
 
 ## Atajos de teclado
@@ -51,7 +52,7 @@ js/store.js       Estado, deshacer/rehacer, guardado local, proyecto de ejemplo
 js/caleditor.js   Editor de calendarios (proyecto y responsables)
 js/table.js       Hoja de tareas: celda activa, columnas, indicadores, edición
 js/gantt.js       Gantt en SVG: escala, barras, holgura, ruta de tareas, interacción
-js/timeline.js    Escala de tiempo (fases e hitos)
+js/timeline.js    Escala de tiempo (tareas e hitos elegidos, colores, etiquetas, eje)
 js/resources.js   Hoja de recursos y carga semanal
 js/exporters.js   Exportación e importación
 js/app.js         Controlador: cinta, vistas, menú contextual, diálogos, teclado

@@ -120,6 +120,7 @@
           <label class="toggle"><input type="checkbox" id="chkTimeline" checked> Escala de tiempo</label>
           <label class="toggle"><input type="checkbox" id="chkNames"> Nombres en barras</label>
         </div>
+        <button class="big" id="btnTimelineEdit" title="Editar la escala de tiempo: tareas e hitos visibles, colores, etiquetas y eje de fechas"><span class="ico">⏱</span>Editar escala<br>de tiempo</button>
         <button class="big" id="btnBaselinesView" title="Elegir qué líneas base se muestran en el Gantt"><span class="ico">📌</span>Líneas<br>base</button>
         <button class="big" id="btnColumns" title="Elegir columnas visibles"><span class="ico">▥</span>Columnas</button>
       </div><div class="rlabel">Mostrar</div>
@@ -376,6 +377,69 @@
   </form>
 </dialog>
 
+<dialog id="dlgTimeline">
+  <form method="dialog" class="dlg wide">
+    <h2>Escala de tiempo</h2>
+    <div class="tabs" id="tlTabs">
+      <button type="button" data-tab="items" class="on">Tareas e hitos</button>
+      <button type="button" data-tab="labels">Etiquetas</button>
+      <button type="button" data-tab="scale">Eje y formato</button>
+    </div>
+    <div class="tabpanel on" data-tab="items">
+      <div class="tl-tools">
+        <label class="check"><input id="tlAutoPhases" type="checkbox"> Mostrar automáticamente las fases (nivel 1)</label>
+        <label class="check"><input id="tlAutoMilestones" type="checkbox"> Mostrar automáticamente los hitos</label>
+        <span class="spacer"></span>
+        <select id="tlQuick" title="Selección rápida">
+          <option value="">Selección rápida…</option>
+          <option value="milestones">Mostrar todos los hitos</option>
+          <option value="summaries">Mostrar todos los resúmenes</option>
+          <option value="level2">Mostrar niveles 1 y 2</option>
+          <option value="critical">Mostrar solo la ruta crítica</option>
+          <option value="none">Ocultar todo</option>
+          <option value="reset">Volver a lo automático</option>
+        </select>
+      </div>
+      <input id="tlSearch" type="search" placeholder="Filtrar por nombre…">
+      <div class="tl-items-wrap">
+        <table class="mini" id="tlItems">
+          <thead><tr><th style="width:56px">Mostrar</th><th style="width:36px">Id</th><th>Tarea</th><th style="width:96px">Fechas</th><th style="width:74px">Color</th><th style="width:200px">Texto en la escala</th><th style="width:30px"></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="hint">Lo que eliges a mano (★) prevalece sobre lo automático. Deja «Texto» vacío para usar el nombre de la tarea. ↺ devuelve la fila a lo automático. También puedes usar «Añadir a la escala de tiempo» en el menú contextual de la tabla.</div>
+    </div>
+    <div class="tabpanel" data-tab="labels">
+      <table class="mini" id="tlLabels">
+        <thead><tr><th style="width:150px">Fecha</th><th>Texto</th><th style="width:74px">Color</th><th style="width:30px"></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <button type="button" id="tlAddLabel" class="secondary">+ Añadir etiqueta</button>
+      <div class="hint">Las etiquetas marcan fechas clave que no son tareas (comités, entregas externas, ferias…) con una bandera y una línea vertical.</div>
+    </div>
+    <div class="tabpanel" data-tab="scale">
+      <div class="form-grid">
+        <label>Rango de fechas
+          <select id="tlRange"><option value="auto">Automático (proyecto completo)</option><option value="custom">Personalizado</option></select>
+        </label>
+        <label>Desde<input id="tlStart" type="date"></label>
+        <label>Hasta<input id="tlFinish" type="date"></label>
+        <label>Unidad del eje<select id="tlUnit"></select></label>
+      </div>
+      <div class="col-list">
+        <label><input id="tlShowDates" type="checkbox"> Mostrar fechas junto a barras e hitos</label>
+        <label><input id="tlShowProgress" type="checkbox"> Mostrar el % completado en las barras</label>
+        <label><input id="tlShowToday" type="checkbox"> Mostrar la línea de hoy</label>
+      </div>
+      <div class="hint">Con un rango personalizado puedes centrar la escala en un tramo (por ejemplo, el próximo trimestre); lo que queda fuera se recorta.</div>
+    </div>
+    <div class="actions">
+      <button type="button" class="secondary" id="tlCancel">Cancelar</button>
+      <button type="submit" class="primary">Aceptar</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="dlgStats">
   <form method="dialog" class="dlg narrow">
     <h2>Estadísticas del proyecto</h2>
@@ -401,6 +465,7 @@
       <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td>Deshacer / rehacer</td></tr>
       <tr><td><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>−</kbd></td><td>Acercar / alejar escala temporal</td></tr>
       <tr><td>Clic derecho</td><td>Menú contextual en la tabla y en el Gantt</td></tr>
+      <tr><td>Doble clic en la escala de tiempo</td><td>Editar la escala de tiempo (tareas, colores, etiquetas, eje)</td></tr>
       <tr><td>Arrastrar barra / borde derecho</td><td>Mover tarea / cambiar duración</td></tr>
       <tr><td>Arrastrar círculo izquierdo o derecho</td><td>Crear vínculo desde el comienzo o el fin. Suelta sobre el comienzo o el fin de otra tarea: FC, CC, FF o CF</td></tr>
     </table>
