@@ -113,13 +113,14 @@
         <div class="rcol">
           <label class="toggle"><input type="checkbox" id="chkCritical" checked> Ruta crítica</label>
           <label class="toggle"><input type="checkbox" id="chkSlack"> Holgura</label>
-          <label class="toggle"><input type="checkbox" id="chkBaseline"> Línea base</label>
+          <label class="toggle"><input type="checkbox" id="chkResNames"> Responsables en barras</label>
         </div>
         <div class="rcol">
           <label class="toggle"><input type="checkbox" id="chkPath"> Ruta de tareas</label>
           <label class="toggle"><input type="checkbox" id="chkTimeline" checked> Escala de tiempo</label>
           <label class="toggle"><input type="checkbox" id="chkNames"> Nombres en barras</label>
         </div>
+        <button class="big" id="btnBaselinesView" title="Elegir qué líneas base se muestran en el Gantt"><span class="ico">📌</span>Líneas<br>base</button>
         <button class="big" id="btnColumns" title="Elegir columnas visibles"><span class="ico">▥</span>Columnas</button>
       </div><div class="rlabel">Mostrar</div>
     </div>
@@ -158,8 +159,7 @@
     </div>
     <div class="rgroup">
       <div class="rbtns">
-        <button class="big" id="btnBaseline" title="Guardar la planificación actual como línea base"><span class="ico">📌</span>Establecer<br>línea base</button>
-        <button class="big" id="btnClearBaseline" title="Borrar la línea base"><span class="ico">✕</span>Borrar<br>línea base</button>
+        <button class="big" id="btnBaseline" title="Establecer, borrar y mostrar líneas base"><span class="ico">📌</span>Establecer<br>línea base</button>
         <button class="big" id="btnStats" title="Estadísticas del proyecto"><span class="ico">📊</span>Estadísticas</button>
       </div><div class="rlabel">Programación</div>
     </div>
@@ -356,6 +356,23 @@
       <span class="spacer"></span>
       <button type="submit" class="primary">Aceptar</button>
     </div>
+  </form>
+</dialog>
+
+<dialog id="dlgBaselines">
+  <form method="dialog" class="dlg">
+    <h2>Líneas base</h2>
+    <div class="form-grid" style="grid-template-columns:1fr 1fr">
+      <label>Al establecer, guardar
+        <select id="blScope"><option value="all">Proyecto completo</option><option value="sel">Solo las tareas seleccionadas</option></select>
+      </label>
+    </div>
+    <table class="mini" id="blTable">
+      <thead><tr><th style="width:62px">Mostrar</th><th style="width:70px">Comparar</th><th>Línea base</th><th style="width:110px">Guardada el</th><th style="width:70px">Tareas</th><th style="width:170px"></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="hint">«Mostrar» dibuja la línea base bajo cada barra del Gantt, cada una con su color. «Comparar» elige la línea base que usan las columnas Comienzo LB, Fin LB y Variación, la barra de estado y las estadísticas.</div>
+    <div class="actions"><button type="submit" class="primary">Cerrar</button></div>
   </form>
 </dialog>
 
