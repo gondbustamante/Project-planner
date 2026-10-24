@@ -72,24 +72,30 @@ const Exporters = (() => {
     U.download(U.safeName(project.name) + '.xml', x, 'application/xml');
   }
 
-  function svg(rows) {
-    const { svg } = Gantt.exportSVG(rows);
-    U.download(U.safeName(Store.project.name) + '.svg', svg, 'image/svg+xml');
+  /** Gantt para exportar; si la escala de tiempo está visible, se coloca encima con el mismo ancho */
+  function ganttImage(rows) {
+    const g = Gantt.exportSVG(rows);
+    if (!App.options.timeline) return g;
+    const t = Timeline.exportSVG(g.width, false); const gap = 8, h = t.height + gap + g.height;
+    return { svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${g.width}" height="${h}" viewBox="0 0 ${g.width} ${h}"><rect width="100%" height="100%" fill="#fff"/>${t.svg}<line x1="0" y1="${t.height + gap / 2}" x2="${g.width}" y2="${t.height + gap / 2}" stroke="#d4d8de"/><g transform="translate(0,${t.height + gap})">${g.svg}</g></svg>`, width: g.width, height: h };
   }
-  function png(rows) {
-    const { svg, width, height } = Gantt.exportSVG(rows);
-    const img = new Image(); const scale = Math.min(2, Math.max(1, 4000 / width));
-    img.onload = () => {
+  const timelineImage = () => Timeline.exportSVG(1600, true);
+  const fileBase = suffix => U.safeName(Store.project.name) + (suffix || '');
+
+  function saveSVG(img, name) { U.download(name + '.svg', img.svg, 'image/svg+xml'); }
+  function savePNG(img, name) {
+    const { svg, width, height } = img;
+    const pic = new Image(); const scale = Math.min(2, Math.max(1, 4000 / width));
+    pic.onload = () => {
       const canvas = document.createElement('canvas'); canvas.width = Math.round(width * scale); canvas.height = Math.round(height * scale);
-      const ctx = canvas.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.scale(scale, scale); ctx.drawImage(img, 0, 0);
-      canvas.toBlob(b => U.download(U.safeName(Store.project.name) + '.png', b), 'image/png');
+      const ctx = canvas.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.scale(scale, scale); ctx.drawImage(pic, 0, 0);
+      canvas.toBlob(b => U.download(name + '.png', b), 'image/png');
     };
-    img.onerror = () => App.toast('No se pudo generar el PNG; prueba la exportación SVG');
-    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    pic.onerror = () => App.toast('No se pudo generar el PNG; prueba la exportación SVG');
+    pic.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
   }
-  function print(rows) {
-    const { project, computed } = Store;
-    const { svg, width, height } = Gantt.exportSVG(rows || App.visibleRows());
+  function printPage(img, subtitle, legend) {
+    const { project, computed } = Store; const { svg, width, height } = img;
     const w = window.open('', '_blank');
     if (!w) { App.toast('El navegador ha bloqueado la ventana de impresión'); return; }
     const landscape = width > height * 1.1;
@@ -97,13 +103,24 @@ const Exporters = (() => {
       <style>@page{size:A4 ${landscape ? 'landscape' : 'portrait'};margin:12mm}body{font-family:Segoe UI,system-ui,Arial,sans-serif;color:#1f2430;margin:0}
       h1{font-size:18px;margin:0 0 2px}.meta{font-size:11px;color:#6b7280;margin-bottom:8px}svg{width:100%;height:auto;max-height:calc(100vh - 60px)}
       .legend{font-size:10px;color:#6b7280;margin-top:6px;display:flex;gap:14px}.sw{display:inline-block;width:14px;height:8px;vertical-align:middle;margin-right:3px}</style></head><body>
-      <h1>${U.esc(project.name)}</h1>
-      <div class="meta">Inicio ${U.fmt(computed.projStart)} · Fin ${U.fmt(computed.projFinish)} · ${computed.duration} días laborables · ${project.tasks.length} tareas · impreso el ${U.fmt(U.today())}</div>
+      ${subtitle != null ? `<h1>${U.esc(project.name)}</h1>
+      <div class="meta">${subtitle}Inicio ${U.fmt(computed.projStart)} · Fin ${U.fmt(computed.projFinish)} · ${computed.duration} días laborables · ${project.tasks.length} tareas · impreso el ${U.fmt(U.today())}</div>` : ''}
       ${svg}
-      <div class="legend"><span><span class="sw" style="background:#3b7dd8"></span>Tarea</span><span><span class="sw" style="background:#d93025"></span>Tarea crítica</span><span><span class="sw" style="background:#2b2f36"></span>Resumen</span><span>◆ Hito</span>${Gantt.shownBaselines().map(k => `<span><span class="sw" style="background:${Store.BL.COLORS[k]}"></span>${Store.BL.name(k)}</span>`).join('')}<span>▼ Fecha límite</span></div>
+      ${legend || ''}
       <script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script></body></html>`);
     w.document.close();
   }
+
+  function svg(rows) { saveSVG(ganttImage(rows), fileBase()); }
+  function png(rows) { savePNG(ganttImage(rows), fileBase()); }
+  function print(rows) {
+    const legend = `<div class="legend"><span><span class="sw" style="background:#3b7dd8"></span>Tarea</span><span><span class="sw" style="background:#d93025"></span>Tarea crítica</span><span><span class="sw" style="background:#2b2f36"></span>Resumen</span><span>◆ Hito</span>${Gantt.shownBaselines().map(k => `<span><span class="sw" style="background:${Store.BL.COLORS[k]}"></span>${Store.BL.name(k)}</span>`).join('')}<span>▼ Fecha límite</span></div>`;
+    printPage(ganttImage(rows || App.visibleRows()), '', legend);
+  }
+  // Escala de tiempo sola (lista para una presentación o un informe)
+  function timelineSVG() { saveSVG(timelineImage(), fileBase('_escala_de_tiempo')); }
+  function timelinePNG() { savePNG(timelineImage(), fileBase('_escala_de_tiempo')); }
+  function timelinePrint() { printPage(timelineImage(), null); }
 
   // ---------- importación ----------
   function importFile(file) {
@@ -187,5 +204,5 @@ const Exporters = (() => {
     Store.mutate(() => p);
   }
 
-  return { json, csv, mspXML, svg, png, print, importFile };
+  return { json, csv, mspXML, svg, png, print, timelineSVG, timelinePNG, timelinePrint, importFile };
 })();

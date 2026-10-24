@@ -39,7 +39,7 @@ const Timeline = (() => {
 
   function axisSVG(lo, hi, x, H, unit) {
     let s = '';
-    const tick = (a, b, txt) => { const xa = x(a), xb = x(b); s += `<line x1="${xa}" y1="0" x2="${xa}" y2="${H}" stroke="#eceff3"/>`; if (xb - xa > txt.length * 6 + 6) s += `<text x="${(xa + xb) / 2}" y="12" text-anchor="middle" fill="#6b7280">${txt}</text>`; };
+    const tick = (a, b, txt) => { const xa = x(a), xb = x(b); s += `<line x1="${xa}" y1="0" x2="${xa}" y2="${H}" stroke="#eceff3"/>`; if (xb - xa > txt.length * 6 + 6) s += `<text x="${(xa + xb) / 2}" y="12" text-anchor="middle" style="fill:#6b7280">${txt}</text>`; };
     const step = (start, next, label) => { let d = start; while (d < hi) { const n = next(d); tick(Math.max(d, lo), Math.min(n, hi), label(d)); d = n; } };
     const p0 = U.parts(lo);
     if (unit === 'week') { let d = lo; while (U.dow(d) !== 1) d--; step(d, d => d + 7, d => { const p = U.parts(d); return `${p.d} ${U.MONTHS[p.m]}`; }); }
@@ -49,11 +49,10 @@ const Timeline = (() => {
     return s;
   }
 
-  function render() {
-    if (!App.options.timeline) { el.classList.add('hidden'); return; }
-    el.classList.remove('hidden');
+  /** Dibuja la escala de tiempo con el ancho dado; la usan la vista y las exportaciones */
+  function build(W, forExport = false) {
     const { project, computed } = Store; const tasks = project.tasks, C = computed.C, s = project.timeline;
-    const W = el.clientWidth || 1000, L = 10, R = 10;
+    const L = 10, R = 10;
     const { lo, hi } = axisRange(s);
     const x = d => L + (d - lo) / (hi - lo) * (W - L - R);
     const cx = v => U.clamp(v, L, W - R);
@@ -79,11 +78,10 @@ const Timeline = (() => {
     const msY = barTop + lanes * (PH + PG) + (lanes ? 10 : 8);
     const empty = !bars.length && !ms.length && !labels.length;
     const H = empty ? 44 : msY + (ms.length ? 2 * 16 : 0) + 4;
-    el.style.height = H + 'px';
 
     let out = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">`;
     out += axisSVG(lo, hi, x, H, unit) + `<line x1="0" y1="16.5" x2="${W}" y2="16.5" stroke="#d4d8de"/>`;
-    if (empty) out += `<text x="${W / 2}" y="34" text-anchor="middle" fill="#6b7280">Escala de tiempo vacía · haz doble clic para elegir tareas, hitos y etiquetas</text>`;
+    if (empty) out += `<text x="${W / 2}" y="34" text-anchor="middle" style="fill:#6b7280">${forExport ? 'Escala de tiempo vacía' : 'Escala de tiempo vacía · haz doble clic para elegir tareas, hitos y etiquetas'}</text>`;
 
     labels.forEach((l, n) => {
       const px = x(l.d), y = 20 + lblLane[n] * 18, w = Math.min(l.text.length * 6.2 + 12, 220);
@@ -111,12 +109,26 @@ const Timeline = (() => {
       const custom = s.items[t.id] && s.items[t.id].color;
       const col = custom || (c.critical && App.options.critical ? '#d93025' : MS_COLOR);
       const txt = labelOf(t) + (s.showDates ? ' · ' + U.fmt(c.es) : '');
-      out += `<g class="tl-bar" data-i="${i}"><polygon points="${px},${y - 5} ${px + 5},${y} ${px},${y + 5} ${px - 5},${y}" fill="${col}"/>${px + 8 + txt.length * 6 > W - R ? `<text x="${px - 8}" y="${y + 4}" text-anchor="end" fill="#374151">` : `<text x="${px + 8}" y="${y + 4}" fill="#374151">`}${U.esc(txt)}</text><title>${U.esc(labelOf(t))} · ${U.fmt(c.es)}</title></g>`;
+      out += `<g class="tl-bar" data-i="${i}"><polygon points="${px},${y - 5} ${px + 5},${y} ${px},${y + 5} ${px - 5},${y}" fill="${col}"/>${px + 8 + txt.length * 6 > W - R ? `<text x="${px - 8}" y="${y + 4}" text-anchor="end" style="fill:#374151">` : `<text x="${px + 8}" y="${y + 4}" style="fill:#374151">`}${U.esc(txt)}</text><title>${U.esc(labelOf(t))} · ${U.fmt(c.es)}</title></g>`;
     }
 
-    const td = U.today(); if (s.showToday && td >= lo && td < hi) out += `<line x1="${x(td)}" y1="16" x2="${x(td)}" y2="${H}" stroke="#ef4444" stroke-dasharray="4 3"/><text x="${x(td) + 3}" y="${H - 4}" fill="#ef4444">hoy</text>`;
+    const td = U.today(); if (s.showToday && td >= lo && td < hi) out += `<line x1="${x(td)}" y1="16" x2="${x(td)}" y2="${H}" stroke="#ef4444" stroke-dasharray="4 3"/><text x="${x(td) + 3}" y="${H - 4}" style="fill:#ef4444">hoy</text>`;
     out += '</svg>';
-    el.innerHTML = out;
+    return { svg: out, width: W, height: H };
   }
-  return { init, render, isShown, defaultColors, UNITS, PAL };
+  function render() {
+    if (!App.options.timeline) { el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
+    const { svg, height } = build(el.clientWidth || 1000);
+    el.style.height = height + 'px'; el.innerHTML = svg;
+  }
+  /** SVG autónomo (estilos incluidos) para exportar; con cabecera opcional de proyecto y fechas */
+  function exportSVG(W = 1600, withTitle = true) {
+    const { project, computed } = Store; const tl = build(W, true); const head = withTitle ? 46 : 0;
+    const style = `<style>text{font-family:Segoe UI,system-ui,Arial,sans-serif;font-size:11px;fill:#1f2430}</style>`;
+    const title = withTitle ? `<text x="10" y="20" style="font-size:16px;font-weight:600">${U.esc(project.name)}</text><text x="10" y="37" style="fill:#6b7280">Escala de tiempo · ${U.fmt(computed.projStart)} → ${U.fmt(computed.projFinish)} · ${computed.duration} días laborables · ${U.fmt(U.today())}</text>` : '';
+    const h = head + tl.height;
+    return { svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${h}" viewBox="0 0 ${W} ${h}">${style}<rect width="100%" height="100%" fill="#fff"/>${title}<g transform="translate(0,${head})">${tl.svg}</g></svg>`, width: W, height: h };
+  }
+  return { init, render, build, exportSVG, isShown, defaultColors, UNITS, PAL };
 })();

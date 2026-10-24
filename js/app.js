@@ -553,7 +553,7 @@ const App = (() => {
     $('btnDuplicate').onclick = () => { const copy = JSON.parse(JSON.stringify(Store.project)); copy.id = U.uid(); copy.name = copy.name + ' (copia)'; Store.createProject(copy); renderProjects(); toast('Proyecto duplicado'); };
     $('btnImport').onclick = () => $('fileImport').click();
     $('fileImport').onchange = e => { if (e.target.files[0]) Exporters.importFile(e.target.files[0]); e.target.value = ''; };
-    document.querySelectorAll('[data-export]').forEach(b => b.onclick = () => { const rows = visibleRows(); ({ json: Exporters.json, csv: Exporters.csv, xml: Exporters.mspXML, svg: () => Exporters.svg(rows), png: () => Exporters.png(rows), print: () => Exporters.print(rows) })[b.dataset.export](); });
+    document.querySelectorAll('[data-export]').forEach(b => b.onclick = () => { const rows = visibleRows(); ({ json: Exporters.json, csv: Exporters.csv, xml: Exporters.mspXML, svg: () => Exporters.svg(rows), png: () => Exporters.png(rows), print: () => Exporters.print(rows), tlpng: Exporters.timelinePNG, tlsvg: Exporters.timelineSVG, tlprint: Exporters.timelinePrint })[b.dataset.export](); });
     $('filterText').oninput = e => { filter.text = e.target.value.trim(); refresh(); };
     $('filterResource').onchange = e => { filter.resource = e.target.value; refresh(); };
     $('filterCritical').onchange = e => { filter.critical = e.target.checked; refresh(); };

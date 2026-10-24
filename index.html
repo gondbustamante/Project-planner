@@ -180,11 +180,16 @@
       <button data-export="png">🖼 Imagen PNG del Gantt</button>
       <button data-export="svg">🖼 Imagen SVG del Gantt</button>
       <button data-export="print">🖨 Imprimir / PDF</button>
+      <div class="file-h" style="margin-top:8px">Escala de tiempo</div>
+      <button data-export="tlpng">🖼 Imagen PNG de la escala de tiempo</button>
+      <button data-export="tlsvg">🖼 Imagen SVG de la escala de tiempo</button>
+      <button data-export="tlprint">🖨 Imprimir / PDF de la escala de tiempo</button>
       <input type="file" id="fileImport" accept=".json,.xml" hidden>
     </div>
     <div class="file-right">
       <div class="file-h">Proyectos guardados en este navegador</div>
       <table class="mini" id="projTable"><thead><tr><th>Nombre</th><th>Inicio</th><th>Fin</th><th>Tareas</th><th>Modificado</th><th></th></tr></thead><tbody></tbody></table>
+      <div class="hint">Si la escala de tiempo está visible (Vista → Escala de tiempo), las imágenes y el PDF del Gantt la incluyen encima.</div>
       <div class="hint">Los proyectos se guardan automáticamente en este navegador. Exporta una copia JSON para llevarlos a otro equipo o compartirlos.</div>
     </div>
   </div>
@@ -434,6 +439,11 @@
       <div class="hint">Con un rango personalizado puedes centrar la escala en un tramo (por ejemplo, el próximo trimestre); lo que queda fuera se recorta.</div>
     </div>
     <div class="actions">
+      <span class="hint">Exportar lo guardado:</span>
+      <button type="button" class="secondary" data-export="tlpng">PNG</button>
+      <button type="button" class="secondary" data-export="tlsvg">SVG</button>
+      <button type="button" class="secondary" data-export="tlprint">PDF</button>
+      <span class="spacer"></span>
       <button type="button" class="secondary" id="tlCancel">Cancelar</button>
       <button type="submit" class="primary">Aceptar</button>
     </div>
