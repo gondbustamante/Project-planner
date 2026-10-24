@@ -16,6 +16,7 @@
   <div class="view-switch" id="viewSwitch">
     <button data-view="gantt" class="on">Diagrama de Gantt</button>
     <button data-view="resources">Hoja de recursos</button>
+    <button data-view="report">Informes</button>
   </div>
 </header>
 
@@ -26,6 +27,7 @@
     <button data-tab="task" class="on">Tarea</button>
     <button data-tab="view">Vista</button>
     <button data-tab="project">Proyecto</button>
+    <button data-tab="reports">Informes</button>
     <span class="spacer"></span>
     <button id="btnHelp" class="help" title="Atajos de teclado">? Atajos</button>
   </div>
@@ -165,6 +167,30 @@
     </div>
   </div>
 
+  <!-- Pestaña Informes -->
+  <div class="ribbon-panel" data-panel="reports">
+    <div class="rgroup">
+      <div class="rbtns">
+        <button class="big" data-report="overview" title="KPIs, curva de avance, estado de tareas y avance por fase"><span class="ico">📊</span>Resumen del<br>proyecto</button>
+        <button class="big" data-report="status" title="Semáforo, comentarios, riesgos, hitos y próximas tareas para dirección"><span class="ico">🚦</span>Informe<br>de estado</button>
+      </div><div class="rlabel">Panel</div>
+    </div>
+    <div class="rgroup">
+      <div class="rbtns">
+        <button class="big" data-report="critical"><span class="ico">🔥</span>Tareas<br>críticas</button>
+        <button class="big" data-report="late"><span class="ico">⏰</span>Tareas<br>retrasadas</button>
+        <button class="big" data-report="upcoming"><span class="ico">📆</span>Próximas<br>tareas</button>
+        <button class="big" data-report="milestones"><span class="ico">◆</span>Hitos</button>
+      </div><div class="rlabel">Tareas</div>
+    </div>
+    <div class="rgroup">
+      <div class="rbtns">
+        <button class="big" data-report="resources"><span class="ico">👥</span>Carga de<br>recursos</button>
+        <button class="big" data-report="variance"><span class="ico">📐</span>Variación<br>línea base</button>
+      </div><div class="rlabel">Recursos y costes</div>
+    </div>
+  </div>
+
   <!-- Pestaña Archivo -->
   <div class="ribbon-panel file-panel" data-panel="file">
     <div class="file-left">
@@ -220,6 +246,21 @@
     <div class="gantt-header" id="resHeader"></div>
     <div class="gantt-body" id="resBodyChart"></div>
   </section>
+</main>
+
+<!-- ======================= Vista Informes ======================= -->
+<main class="workspace hidden" id="viewReport">
+  <div class="report-bar">
+    <select id="rType" title="Tipo de informe"></select>
+    <select id="rRes" title="Filtrar por responsable"></select>
+    <span id="rDaysWrap"><select id="rDays" title="Horizonte"><option value="7">Próximos 7 días</option><option value="14">Próximos 14 días</option><option value="30">Próximos 30 días</option><option value="60">Próximos 60 días</option></select></span>
+    <label class="toggle" title="Fecha a la que se calcula el avance esperado; vacía = hoy">Fecha de estado <input type="date" id="rStatusDate"></label>
+    <span class="spacer"></span>
+    <button id="rPrint" class="secondary">🖨 Imprimir / PDF</button>
+    <button id="rDownload" class="secondary">⤓ Descargar HTML</button>
+    <button id="rBack" class="secondary">← Volver al Gantt</button>
+  </div>
+  <div class="report-scroll"><div id="reportBody" class="report"></div></div>
 </main>
 
 <!-- ======================= Barra de estado ======================= -->
@@ -419,6 +460,7 @@
 <script src="js/gantt.js"></script>
 <script src="js/timeline.js"></script>
 <script src="js/resources.js"></script>
+<script src="js/reports.js"></script>
 <script src="js/exporters.js"></script>
 <script src="js/app.js"></script>
 </body>
