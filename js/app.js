@@ -32,7 +32,8 @@ const App = (() => {
     if (type === 'selection') { Table.updateSelection(); Gantt.updateSelection(); updateButtons(); return; }
     $('projectName').value = Store.project.name;
     if (view === 'gantt') { const rows = visibleRows(); Table.render(rows); Gantt.render(rows); Timeline.render(); }
-    else { Timeline.render(); ResourceView.render(); }
+    else if (view === 'resources') { Timeline.render(); ResourceView.render(); }
+    else { $('timeline').classList.add('hidden'); Reports.render(); }
     renderStatus(); updateButtons(); renderResourceFilter();
     $('saveState').textContent = Store.saved ? 'Guardado automáticamente' : '⚠ No se pudo guardar';
   }
@@ -65,7 +66,7 @@ const App = (() => {
   function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2800); }
   function syncZoomUI() { $('zoomSlider').value = Math.round(Gantt.pxDay); const t = Gantt.tier(); $('zoom').value = t; }
   function setView(v) {
-    view = v; $('viewGantt').classList.toggle('hidden', v !== 'gantt'); $('viewResources').classList.toggle('hidden', v !== 'resources');
+    view = v; $('viewGantt').classList.toggle('hidden', v !== 'gantt'); $('viewResources').classList.toggle('hidden', v !== 'resources'); $('viewReport').classList.toggle('hidden', v !== 'report');
     document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === v));
     refresh();
   }
@@ -428,7 +429,8 @@ const App = (() => {
   // ---------- arranque ----------
   function init() {
     Store.load();
-    Table.init(); Gantt.init(); Timeline.init(); ResourceView.init();
+    Table.init(); Gantt.init(); Timeline.init(); ResourceView.init(); Reports.init();
+    document.querySelectorAll('[data-report]').forEach(b => b.onclick = () => Reports.show(b.dataset.report));
     Store.subscribe(refresh);
     options.blShow = (Store.getPref('blShow', null) || (Store.getPref('opt.baseline', false) ? [0] : [])).map(Number);
     options.blCompare = +Store.getPref('blCompare', 0) || 0;
