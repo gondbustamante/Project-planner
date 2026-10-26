@@ -15,9 +15,9 @@ const Exporters = (() => {
     const resById = new Map(project.resources.map(r => [r.id, r]));
     const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
     const bls = Store.BL.saved();
-    const rows = [['Id', 'EDT', 'Nivel', 'Nombre', 'Duración (días)', 'Comienzo', 'Fin', 'Predecesoras', 'Sucesoras', 'Responsables', '% completado', 'Hito', 'Resumen', 'Crítica', 'Holgura total (días)', 'Holgura libre (días)', 'Comienzo límite', 'Fin límite', 'Fecha límite', 'Restricción', ...bls.flatMap(k => [`Comienzo ${Store.BL.short(k)}`, `Fin ${Store.BL.short(k)}`]), 'Notas']];
+    const rows = [['Id', 'EDT', 'Nivel', 'Nombre', 'Duración (días)', 'Comienzo', 'Fin', 'Predecesoras', 'Sucesoras', 'Responsables', '% completado', 'Hito', 'Resumen', 'Modo', 'Crítica', 'Holgura total (días)', 'Holgura libre (días)', 'Comienzo límite', 'Fin límite', 'Fecha límite', 'Restricción', ...bls.flatMap(k => [`Comienzo ${Store.BL.short(k)}`, `Fin ${Store.BL.short(k)}`]), 'Notas']];
     project.tasks.forEach((t, i) => rows.push([i + 1, ol.wbs[i], t.level, t.name, t.duration, U.fmt(C[i].es), U.fmt(C[i].ef), Table.predsToText(t), Table.linkText(computed.successors[i]),
-      t.resources.map(id => (resById.get(id) || {}).name).filter(Boolean).join(', '), t.progress || 0, t.milestone ? 'Sí' : 'No', ol.isSummary[i] ? 'Sí' : 'No', C[i].critical ? 'Sí' : 'No', C[i].slack, C[i].freeSlack, U.fmt(C[i].ls), U.fmt(C[i].lf),
+      t.resources.map(id => (resById.get(id) || {}).name).filter(Boolean).join(', '), t.progress || 0, t.milestone ? 'Sí' : 'No', ol.isSummary[i] ? 'Sí' : 'No', t.manual ? 'Manual' : 'Automática', C[i].critical ? 'Sí' : 'No', C[i].slack, C[i].freeSlack, U.fmt(C[i].ls), U.fmt(C[i].lf),
       t.deadline ? U.fmt(U.toDay(t.deadline)) : '', t.constraint && t.constraint.type !== 'ASAP' && t.constraint.date ? `${Table.CONS_LABEL[t.constraint.type]} ${U.fmt(U.toDay(t.constraint.date))}` : '',
       ...bls.flatMap(k => { const bl = Store.BL.of(t, k); return bl ? [U.fmt(U.toDay(bl.start)), U.fmt(U.toDay(bl.finish))] : ['', '']; }), t.notes]));
     U.download(U.safeName(project.name) + '.csv', '﻿' + rows.map(r => r.map(q).join(';')).join('\r\n'), 'text/csv;charset=utf-8');
@@ -51,7 +51,7 @@ const Exporters = (() => {
       const c = C[i]; const uid = i + 1;
       x += `<Task><UID>${uid}</UID><ID>${uid}</ID><Name>${e(t.name)}</Name><Type>0</Type><IsNull>0</IsNull><WBS>${ol.wbs[i]}</WBS><OutlineNumber>${ol.wbs[i]}</OutlineNumber><OutlineLevel>${t.level}</OutlineLevel>`;
       x += `<Start>${T8(U.fromDay(c.es))}</Start><Finish>${t.milestone ? T8(U.fromDay(c.ef)) : T17(U.fromDay(c.ef))}</Finish><Duration>${hours(t.duration)}</Duration><DurationFormat>7</DurationFormat>`;
-      x += `<Milestone>${t.milestone ? 1 : 0}</Milestone><Summary>${ol.isSummary[i] ? 1 : 0}</Summary><Critical>${c.critical ? 1 : 0}</Critical><PercentComplete>${t.progress || 0}</PercentComplete>`;
+      x += `<Milestone>${t.milestone ? 1 : 0}</Milestone><Summary>${ol.isSummary[i] ? 1 : 0}</Summary><Manual>${t.manual ? 1 : 0}</Manual><Critical>${c.critical ? 1 : 0}</Critical><PercentComplete>${t.progress || 0}</PercentComplete>`;
       x += `<EarlyStart>${T8(U.fromDay(c.es))}</EarlyStart><EarlyFinish>${T17(U.fromDay(c.ef))}</EarlyFinish><LateStart>${T8(U.fromDay(c.ls))}</LateStart><LateFinish>${T17(U.fromDay(c.lf))}</LateFinish><TotalSlack>${c.slack * 4800}</TotalSlack>`;
       const cons = t.constraint || { type: 'ASAP' };
       x += `<ConstraintType>${MSP_CONS[cons.type] ?? 0}</ConstraintType>${cons.date && cons.type !== 'ASAP' ? `<ConstraintDate>${T8(cons.date)}</ConstraintDate>` : ''}`;
@@ -187,6 +187,7 @@ const Exporters = (() => {
       let dur = parseDur(g(te, 'Duration')); if (dur == null) dur = (start != null && fin != null) ? new WorkCalendar(p.calendar.workDays, p.calendar.exceptions).duration(start, fin) : 1;
       const ms = g(te, 'Milestone') === '1' || dur === 0;
       const t = Store.newTask({ name: g(te, 'Name') || 'Tarea', level: lvl, duration: ms ? 0 : Math.max(1, dur), milestone: ms, progress: +g(te, 'PercentComplete') || 0, notes: g(te, 'Notes'), ignoreResourceCalendars: g(te, 'IgnoreResourceCalendar') === '1', deadline: U.toDay(g(te, 'Deadline')) != null ? U.fromDay(U.toDay(g(te, 'Deadline'))) : null, priority: +g(te, 'Priority') || 500 });
+      if (g(te, 'Manual') === '1' && start != null) { t.manual = true; t.manualStart = U.fromDay(start); }
       const ct = +g(te, 'ConstraintType'), cd = U.toDay(g(te, 'ConstraintDate'));
       if (cd != null) { if (ct === 2) t.constraint = { type: 'MSO', date: U.fromDay(cd) }; else if (ct === 4 || ct === 6) t.constraint = { type: 'SNET', date: U.fromDay(cd) }; }
       for (const bl of te.getElementsByTagName('Baseline')) { if (bl.parentNode !== te) continue; const k = parseInt(g(bl, 'Number'), 10) || 0; const bs = U.toDay(g(bl, 'Start')), bf = U.toDay(g(bl, 'Finish')); if (k >= 0 && k <= 10 && bs != null && bf != null) { t.baselines[k] = { start: U.fromDay(bs), finish: U.fromDay(bf) }; if (!p.baselines[k]) p.baselines[k] = { date: null }; } }
@@ -200,7 +201,7 @@ const Exporters = (() => {
     // Tareas sin predecesoras ni restricción: fijar su fecha de comienzo original para respetar el plan importado
     const summaryIdx = new Set(); p.tasks.forEach((t, i) => { if (p.tasks[i + 1] && p.tasks[i + 1].level > t.level) summaryIdx.add(i); });
     let k = 0;
-    for (const te of tasksEl.getElementsByTagName('Task')) { if (g(te, 'IsNull') === '1' || !+g(te, 'OutlineLevel')) continue; const t = p.tasks[k++]; if (!t || summaryIdx.has(k - 1)) continue; const s = U.toDay(g(te, 'Start')); if (s != null && !t.predecessors.length && t.constraint.type === 'ASAP' && s > U.toDay(p.start)) t.constraint = { type: 'SNET', date: U.fromDay(s) }; }
+    for (const te of tasksEl.getElementsByTagName('Task')) { if (g(te, 'IsNull') === '1' || !+g(te, 'OutlineLevel')) continue; const t = p.tasks[k++]; if (!t || t.manual || summaryIdx.has(k - 1)) continue; const s = U.toDay(g(te, 'Start')); if (s != null && !t.predecessors.length && t.constraint.type === 'ASAP' && s > U.toDay(p.start)) t.constraint = { type: 'SNET', date: U.fromDay(s) }; }
     Store.mutate(() => p);
   }
 

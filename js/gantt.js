@@ -131,10 +131,10 @@ const Gantt = (() => {
       const tk = tasks[i], c = C[i], y = yOf.get(i), sum = ol.isSummary[i];
       const crit = c.critical && opts.critical && !sum;
       const x1 = x(c.es), x2 = x(c.ef + 1), w = Math.max(x2 - x1, 2);
-      let color = sum ? '#2b2f36' : crit ? '#d93025' : '#3b7dd8';
-      let stroke = '';
+      let color = sum ? '#2b2f36' : crit ? '#d93025' : tk.manual ? '#0d9488' : '#3b7dd8';
+      let stroke = c.manualConflict ? ' stroke="#d93025" stroke-width="1.5" stroke-dasharray="3 2"' : '';
       if (path) { if (path.preds.has(tk.id)) { color = '#d97706'; } else if (path.succs.has(tk.id)) { color = '#7c3aed'; } else if (!path.sel.has(tk.id)) color = sum ? '#9ca3af' : '#b8c4d6'; else stroke = ' stroke="#111" stroke-width="1.5"'; }
-      const tip = `<title>${U.esc(tk.name)}\n${U.fmt(c.es)} → ${U.fmt(c.ef)} · ${tk.milestone ? 'hito' : tk.duration + ' días'}${sum ? '' : ' · holgura ' + c.slack + ' d'}${tk.progress ? ' · ' + tk.progress + '%' : ''}${tk.resources.length ? '\n' + tk.resources.map(id => (resById.get(id) || {}).name).filter(Boolean).join(', ') : ''}</title>`;
+      const tip = `<title>${U.esc(tk.name)}\n${U.fmt(c.es)} → ${U.fmt(c.ef)} · ${tk.milestone ? 'hito' : tk.duration + ' días'}${sum ? '' : ' · holgura ' + c.slack + ' d'}${tk.manual ? ' · programación manual' : ''}${c.manualConflict ? '\n⚠ ' + U.esc(c.manualConflict) : ''}${tk.progress ? ' · ' + tk.progress + '%' : ''}${tk.resources.length ? '\n' + tk.resources.map(id => (resById.get(id) || {}).name).filter(Boolean).join(', ') : ''}</title>`;
       let g = `<g class="task-row" data-id="${tk.id}" data-i="${i}">`;
       g += `<rect class="row-hover" x="0" y="${y}" width="${width}" height="${ROW}" fill="transparent"/>`;
       shown.forEach((k, n) => {
@@ -161,6 +161,8 @@ const Gantt = (() => {
         const by = y + BY, bh = BH;
         g += `<rect class="bar" x="${x1}" y="${by}" width="${w}" height="${bh}" rx="2" fill="${color}"${stroke}>${tip}</rect>`;
         if (tk.progress > 0) g += `<rect class="bar" x="${x1 + 1}" y="${by + 5}" width="${Math.max((w - 2) * Math.min(tk.progress, 100) / 100, 0)}" height="${bh - 10}" rx="1" fill="rgba(0,0,0,.45)"/>`;
+        // Tarea manual: corchetes en los extremos, como en Project
+        if (tk.manual) g += `<path d="M${x1 + 3} ${by - 2} H${x1} V${by + bh + 2} H${x1 + 3} M${x1 + w - 3} ${by - 2} H${x1 + w} V${by + bh + 2} H${x1 + w - 3}" fill="none" stroke="#134e4a" stroke-width="1.5" pointer-events="none"/>`;
         g += `<rect class="bar-resize" x="${x1 + w - 6}" y="${by}" width="8" height="${bh}"/>`;
         g += `<circle class="link-handle" data-end="start" cx="${x1 - 7}" cy="${by + bh / 2}" r="4"><title>Arrastra desde el comienzo</title></circle>`;
         g += `<circle class="link-handle" data-end="finish" cx="${x1 + w + 7}" cy="${by + bh / 2}" r="4"><title>Arrastra desde el fin</title></circle>`;
@@ -309,8 +311,9 @@ const Gantt = (() => {
     if (d.mode === 'move') {
       if (!d.moved || !d.days) { App.refresh(); return; }
       const ns = d.days > 0 ? cal.next(d.es + d.days) : cal.prev(d.es + d.days);
-      Store.mutate(p => { const t = p.tasks[d.i]; t.constraint = { type: 'SNET', date: U.fromDay(ns) }; });
-      App.toast(`Restricción «No comenzar antes del ${U.fmt(ns)}» aplicada`);
+      const manual = Store.project.tasks[d.i].manual;
+      Store.mutate(p => { const t = p.tasks[d.i]; if (manual) t.manualStart = U.fromDay(ns); else t.constraint = { type: 'SNET', date: U.fromDay(ns) }; });
+      App.toast(manual ? `Comienzo fijado el ${U.fmt(ns)}` : `Restricción «No comenzar antes del ${U.fmt(ns)}» aplicada`);
     } else if (d.mode === 'resize') {
       if (d.newEf == null) { App.refresh(); return; }
       const nd = Math.max(1, cal.duration(d.es, cal.prev(Math.max(d.newEf, d.es))));

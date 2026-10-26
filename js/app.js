@@ -40,7 +40,7 @@ const App = (() => {
   function updateButtons() {
     $('btnUndo').disabled = !Store.canUndo; $('btnRedo').disabled = !Store.canRedo;
     const n = Store.selection.length, has = n > 0;
-    ['btnDelete', 'btnIndent', 'btnOutdent', 'btnUp', 'btnDown', 'btnInfo', 'btnNotes', 'btnUnlink', 'btnScrollTo', 'btnPct0', 'btnPct25', 'btnPct50', 'btnPct75', 'btnPct100'].forEach(id => $(id).disabled = !has);
+    ['btnDelete', 'btnIndent', 'btnOutdent', 'btnUp', 'btnDown', 'btnInfo', 'btnNotes', 'btnUnlink', 'btnScrollTo', 'btnPct0', 'btnPct25', 'btnPct50', 'btnPct75', 'btnPct100', 'btnModeManual', 'btnModeAuto'].forEach(id => $(id).disabled = !has);
     $('btnLink').disabled = n < 2;
   }
   function renderStatus() {
@@ -55,7 +55,9 @@ const App = (() => {
       + `<span>Tareas <b>${leaves}</b></span><span>Críticas <b>${crit}</b></span><span>Avance <b>${done}%</b></span>`
       + (project.baselines[options.blCompare] ? `<span>Comparando con <b>${Store.BL.name(options.blCompare)}</b>${project.baselines[options.blCompare].date ? ' del ' + U.fmt(U.toDay(project.baselines[options.blCompare].date)) : ''}</span>` : '')
       + (late ? `<span class="warn">⚑ ${late} fecha(s) límite superada(s)</span>` : '')
-      + (computed.errors ? `<span class="warn">⚠ ${computed.errors} tarea(s) con dependencias circulares</span>` : '');
+      + (computed.errors ? `<span class="warn">⚠ ${computed.errors} tarea(s) con dependencias circulares</span>` : '')
+      + (computed.conflicts ? `<span class="warn" title="Tareas manuales que empiezan antes de lo que permiten sus predecesoras">❗ ${computed.conflicts} tarea(s) manual(es) en conflicto</span>` : '');
+    $('statusMode').textContent = `Nuevas tareas: programadas ${project.newTasksManual ? 'manualmente' : 'automáticamente'}`;
   }
   function setStatusHint(s) { statusHint = s; renderStatus(); }
   function renderResourceFilter() {
@@ -77,7 +79,7 @@ const App = (() => {
     const idx = Store.selectedIndices(); const at = insertAt();
     const ref = idx.length ? Store.project.tasks[idx[idx.length - 1]] : null;
     const level = ref ? (Store.computed.outline.isSummary[idx[idx.length - 1]] && !ref.collapsed ? ref.level + 1 : ref.level) : 1;
-    const t = Store.newTask(Object.assign({ level, name: opts.milestone ? 'Nuevo hito' : 'Nueva tarea' }, opts));
+    const t = Store.newTask(Object.assign({ level, name: opts.milestone ? 'Nuevo hito' : 'Nueva tarea', manual: Store.project.newTasksManual }, opts));
     Store.mutate(p => { p.tasks.splice(at, 0, t); });
     Table.setActive(at, 'name'); Table.editActive();
   }
@@ -119,6 +121,14 @@ const App = (() => {
   function unlinkSelected() {
     const idx = Store.selectedIndices(); if (!idx.length) return; const ids = new Set(idx.map(i => Store.project.tasks[i].id));
     Store.mutate(p => { if (idx.length === 1) { p.tasks[idx[0]].predecessors = []; for (const t of p.tasks) t.predecessors = t.predecessors.filter(x => !ids.has(x.id)); } else for (const i of idx) p.tasks[i].predecessors = p.tasks[i].predecessors.filter(x => !ids.has(x.id)); });
+  }
+  /** Cambia el modo de programación (manual = el comienzo queda fijo; automática = lo calculan vínculos y restricciones) */
+  function setTaskMode(manual, indices = Store.selectedIndices()) {
+    const { computed } = Store; const ol = computed.outline;
+    const idx = indices.filter(i => !ol.isSummary[i] && !!Store.project.tasks[i].manual !== manual);
+    if (!idx.length) { if (indices.length && indices.every(i => ol.isSummary[i])) toast('Las tareas de resumen se programan siempre a partir de sus subtareas'); return; }
+    Store.mutate(p => { for (const i of idx) { const t = p.tasks[i]; t.manual = manual; t.manualStart = manual ? U.fromDay(computed.C[i].es) : null; } });
+    toast(`${idx.length} tarea(s) en programación ${manual ? 'manual: su comienzo queda fijo' : 'automática'}`);
   }
   function setProgress(v) { const idx = Store.selectedIndices(); if (!idx.length) return; Store.mutate(p => { for (const i of idx) if (!Store.computed.outline.isSummary[i]) p.tasks[i].progress = v; else for (let j = i + 1; j < Store.blockEnd(i); j++) p.tasks[j].progress = v; }); }
   // ---------- líneas base ----------
@@ -287,6 +297,7 @@ const App = (() => {
       ['🔗', 'Vincular tareas seleccionadas', linkSelected, Store.selection.length > 1, 'Ctrl+F2'],
       ['⛓', 'Desvincular', unlinkSelected, has, 'Ctrl+Mayús+F2'],
       ['✔', 'Marcar 100 % completada', () => setProgress(100), has],
+      has && !sum && Store.project.tasks[i].manual ? ['⟳', 'Programar automáticamente', () => setTaskMode(false), true] : ['📌', 'Programar manualmente', () => setTaskMode(true), has && !sum],
       null,
       ['⏱', has && Store.selectedIndices().every(k => Timeline.isShown(Store.project.tasks[k])) ? 'Quitar de la escala de tiempo' : 'Añadir a la escala de tiempo', toggleTimelineSelected, has],
       ['🎨', 'Editar escala de tiempo…', () => openTimelineDialog('items', id), true],
@@ -325,8 +336,12 @@ const App = (() => {
     $('tProgress').value = t.progress || 0; $('tProgress').disabled = sum;
     $('tNotes').value = t.notes || '';
     $('tIgnoreCal').checked = !!t.ignoreResourceCalendars; $('tIgnoreCal').disabled = sum;
+    $('tMode').value = t.manual ? 'manual' : 'auto'; $('tMode').disabled = sum;
+    const modeHint = () => { const m = $('tMode').value === 'manual'; $('tModeHint').textContent = m ? 'Programada manualmente: el comienzo que escribas queda fijo; ni los vínculos ni las restricciones la mueven.' : 'Al escribir un comienzo se aplica la restricción «No comenzar antes del»; al escribir un fin se recalcula la duración.'; $('tConstraint').disabled = $('tConstraintDate').disabled = sum || m; };
+    $('tMode').onchange = modeHint; modeHint();
     const withCal = t.resources.map(rid => project.resources.find(r => r.id === rid)).filter(r => r && r.calendar).map(r => r.name);
     $('tComputed').innerHTML = `<span>Comienzo temprano <b>${U.fmt(c.es)}</b></span><span>Fin temprano <b>${U.fmt(c.ef)}</b></span><span>${c.critical ? '<b style="color:#d93025">● Tarea crítica</b>' : ''}</span>`
+      + (c.manualConflict ? `<span style="grid-column:1/-1;color:#d93025">❗ ${U.esc(c.manualConflict)}</span>` : '')
       + `<span>Comienzo límite <b>${U.fmt(c.ls)}</b></span><span>Fin límite <b>${U.fmt(c.lf)}</b></span><span>Holgura total <b>${c.slack} d</b> · libre <b>${c.freeSlack} d</b></span>`
       + (withCal.length && !t.ignoreResourceCalendars ? `<span style="grid-column:1/-1">Calendario personal de: ${U.esc(withCal.join(', '))}</span>` : '')
       + Store.BL.saved().map(k => { const b = Store.BL.of(t, k); return b ? `<span style="grid-column:1/-1"><span style="display:inline-block;width:12px;height:5px;background:${Store.BL.COLORS[k]};vertical-align:middle;margin-right:4px"></span>${Store.BL.name(k)}: ${U.fmt(U.toDay(b.start))} → ${U.fmt(U.toDay(b.finish))}</span>` : ''; }).join('');
@@ -365,7 +380,10 @@ const App = (() => {
           x.progress = U.clamp(parseInt($('tProgress').value, 10) || 0, 0, 100);
           let ct = $('tConstraint').value, cd = $('tConstraintDate').value;
           const ns = U.toDay($('tStart').value), nf = U.toDay($('tFinish').value);
-          if (ns != null && ns !== c.es) { ct = ct === 'MSO' ? 'MSO' : 'SNET'; cd = U.fromDay(cal.next(ns)); }
+          const manual = $('tMode').value === 'manual';
+          if (manual) { ct = (t.constraint || {}).type || 'ASAP'; cd = (t.constraint || {}).date || ''; }
+          x.manual = manual; x.manualStart = manual ? U.fromDay(cal.next(ns != null ? ns : c.es)) : null;
+          if (!manual && ns != null && ns !== c.es) { ct = ct === 'MSO' ? 'MSO' : 'SNET'; cd = U.fromDay(cal.next(ns)); }
           if (nf != null && nf !== c.ef && !x.milestone && !(ns != null && ns !== c.es)) { const nd = cal.duration(c.es, cal.prev(nf)); if (nd >= 1) x.duration = nd; }
           x.constraint = ct === 'ASAP' || !cd ? { type: 'ASAP', date: null } : { type: ct, date: cd };
           x.ignoreResourceCalendars = $('tIgnoreCal').checked;
@@ -418,13 +436,13 @@ const App = (() => {
   // ---------- proyecto ----------
   function openSettings(tab = 'general') {
     const dlg = $('dlgSettings'); const p = Store.project; const c = Store.computed; showTab($('pTabs'), dlg, tab);
-    $('pName').value = p.name; $('pStart').value = p.start; $('pStatusDate').value = p.statusDate || ''; $('pNotes').value = p.notes || '';
+    $('pName').value = p.name; $('pStart').value = p.start; $('pNewMode').value = p.newTasksManual ? 'manual' : 'auto'; $('pStatusDate').value = p.statusDate || ''; $('pNotes').value = p.notes || '';
     $('pComputed').innerHTML = `<span>Fin previsto <b>${U.fmt(c.projFinish)}</b></span><span>Duración <b>${c.duration} días laborables</b></span><span>Tareas <b>${p.tasks.length}</b></span>`;
     CalendarEditor.render($('pCalendar'), p.calendar, { allowInherit: false });
     dlg.querySelector('form').onsubmit = ev => {
       ev.preventDefault();
       const cal = CalendarEditor.read($('pCalendar')); if (!cal) { toast('Debe haber al menos un día laborable'); showTab($('pTabs'), dlg, 'calendar'); return; }
-      Store.mutate(x => { x.name = $('pName').value.trim() || x.name; if (U.toDay($('pStart').value) != null) x.start = $('pStart').value; x.statusDate = $('pStatusDate').value || null; x.notes = $('pNotes').value; x.calendar = cal; });
+      Store.mutate(x => { x.name = $('pName').value.trim() || x.name; if (U.toDay($('pStart').value) != null) x.start = $('pStart').value; x.statusDate = $('pStatusDate').value || null; x.notes = $('pNotes').value; x.calendar = cal; x.newTasksManual = $('pNewMode').value === 'manual'; });
       dlg.close();
     };
     $('pCancel').onclick = () => dlg.close();
@@ -542,6 +560,8 @@ const App = (() => {
     $('btnUp').onclick = () => move(-1); $('btnDown').onclick = () => move(1);
     $('btnLink').onclick = linkSelected; $('btnUnlink').onclick = unlinkSelected;
     [0, 25, 50, 75, 100].forEach(v => $('btnPct' + v).onclick = () => setProgress(v));
+    $('statusMode').onclick = () => { Store.mutate(p => { p.newTasksManual = !p.newTasksManual; }); toast(`Las tareas nuevas se programarán ${Store.project.newTasksManual ? 'manualmente' : 'automáticamente'}`); };
+    $('btnModeManual').onclick = () => setTaskMode(true); $('btnModeAuto').onclick = () => setTaskMode(false);
     $('btnBaseline').onclick = openBaselines; $('btnBaselinesView').onclick = openBaselines; $('btnStats').onclick = openStats;
     $('zoom').onchange = e => { Gantt.setZoom(e.target.value); Gantt.scrollToDay(Store.computed.projStart); };
     $('zoomSlider').oninput = e => { Gantt.setPxDay(+e.target.value); Store.setPref('pxDay', +e.target.value); };
@@ -581,5 +601,5 @@ const App = (() => {
   }
 
   document.addEventListener('DOMContentLoaded', init);
-  return { options, filter, refresh, visibleRows, toast, setStatusHint, syncZoomUI, addTask, addSummary, deleteSelected, indent, move, addLink, linkSelected, unlinkSelected, setProgress, saveBaseline, clearBaseline, openBaselines, setBaselineView, openTimelineDialog, toggleTimelineSelected, openTaskDialog, openResources, openSettings, openResourceCalendar, showContextMenu, hideContextMenu, setView };
+  return { options, filter, refresh, visibleRows, toast, setStatusHint, syncZoomUI, addTask, addSummary, deleteSelected, indent, move, addLink, linkSelected, unlinkSelected, setProgress, setTaskMode, saveBaseline, clearBaseline, openBaselines, setBaselineView, openTimelineDialog, toggleTimelineSelected, openTaskDialog, openResources, openSettings, openResourceCalendar, showContextMenu, hideContextMenu, setView };
 })();

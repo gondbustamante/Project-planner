@@ -138,11 +138,20 @@ const Scheduler = (() => {
           if (b > es) es = b;
         }
       }
-      const cons = t.constraint || { type: 'ASAP' };
-      const cd = cons.date ? U.toDay(cons.date) : null;
-      if (cons.type === 'SNET' && cd != null) es = Math.max(es, cd);
-      if (cons.type === 'MSO' && cd != null) es = cd;
-      es = tc.next(es);
+      // Programación manual: la tarea se queda en el comienzo fijado por el usuario; vínculos y restricciones no la mueven
+      const pin = t.manual ? U.toDay(t.manualStart) : null;
+      c.manualConflict = null;
+      if (pin != null) {
+        const driven = tc.next(es);
+        es = tc.next(pin);
+        if (!cyc && driven > es) c.manualConflict = `Las predecesoras permitirían empezar el ${U.fmt(driven)}, después del comienzo fijado`;
+      } else {
+        const cons = t.constraint || { type: 'ASAP' };
+        const cd = cons.date ? U.toDay(cons.date) : null;
+        if (cons.type === 'SNET' && cd != null) es = Math.max(es, cd);
+        if (cons.type === 'MSO' && cd != null) es = cd;
+        es = tc.next(es);
+      }
       c.es = es; c.ef = finishOf(es, d, tc); c.cal = tc;
       c.error = cyc ? 'Dependencia circular' : calendarWarn[i];
     }
@@ -211,6 +220,7 @@ const Scheduler = (() => {
       C[i].critical = kids.some(k => C[k].critical);
       C[i].deadlineMissed = tasks[i].deadline ? C[i].ef > U.toDay(tasks[i].deadline) : false;
       C[i].error = kids.some(k => C[k].error) ? 'Contiene dependencias circulares' : null;
+      C[i].manualConflict = null;
     }
 
     // ---- Volcado a las tareas (fechas visibles, duración y avance de resúmenes) ----
@@ -224,13 +234,15 @@ const Scheduler = (() => {
         const w = kids.reduce((s, k) => s + Math.max(dur(tasks[k]), 1), 0);
         t.progress = Math.round(kids.reduce((s, k) => s + (+tasks[k].progress || 0) * Math.max(dur(tasks[k]), 1), 0) / (w || 1));
       } else if (t.milestone) { t.duration = 0; }
+      if (ol.isSummary[i]) { t.manual = false; t.manualStart = null; }
+      else if (t.manual) t.manualStart = t.start; // al pasar a manual (o importar) se fija el comienzo actual
     }
 
     // Sucesoras directas de cada tarea (para la columna y el diálogo)
     const successors = tasks.map(() => []);
     for (let i = 0; i < n; i++) for (const p of tasks[i].predecessors) successors[idx.get(p.id)].push({ id: tasks[i].id, type: p.type, lag: p.lag });
     return { C, outline: ol, cal, projStart, projFinish, idx, leavesOf, ancestors, successors,
-      duration: cal.duration(projStart, projFinish), errors: C.filter(c => c.error).length };
+      duration: cal.duration(projStart, projFinish), errors: C.filter(c => c.error).length, conflicts: C.filter(c => c.manualConflict).length };
   }
 
   return { compute, outline, LINK_TYPES, dur };

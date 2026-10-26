@@ -4,6 +4,7 @@ const Table = (() => {
     { key: 'ind', label: '', w: 34, cls: 'c-ind', fixed: true },
     { key: 'id', label: '#', w: 36, cls: 'c-id', fixed: true },
     { key: 'wbs', label: 'EDT', w: 56, cls: 'c-wbs num', def: false },
+    { key: 'mode', label: 'Modo', w: 44, cls: 'c-mode', edit: true, def: true },
     { key: 'name', label: 'Nombre de tarea', w: 250, cls: 'c-name', edit: true, def: true },
     { key: 'duration', label: 'Duración', w: 74, cls: 'c-duration num', edit: true, def: true },
     { key: 'start', label: 'Comienzo', w: 98, cls: 'c-start', edit: true, def: true },
@@ -94,6 +95,7 @@ const Table = (() => {
   function indicators(t, c, i, sum) {
     const { project } = Store; const out = [];
     if (c.error) out.push(`<span class="ind" title="${U.esc(c.error)}">⚠️</span>`);
+    if (c.manualConflict) out.push(`<span class="ind" title="${U.esc(c.manualConflict)}">❗</span>`);
     if (!sum && (t.progress | 0) >= 100) out.push('<span class="ind" title="Tarea completada">✅</span>');
     if (t.notes) out.push(`<span class="ind" title="${U.esc(t.notes.slice(0, 200))}">📝</span>`);
     if (!sum && t.constraint && t.constraint.type !== 'ASAP' && t.constraint.date) out.push(`<span class="ind" title="${CONS_LABEL[t.constraint.type]} ${U.fmt(U.toDay(t.constraint.date))}">📌</span>`);
@@ -108,6 +110,7 @@ const Table = (() => {
       case 'ind': return indicators(t, c, i, sum);
       case 'id': return String(i + 1);
       case 'wbs': return ctx.ol.wbs[i];
+      case 'mode': return sum ? '' : t.manual ? '<span class="mode manual" title="Programada manualmente: vínculos y restricciones no la mueven">📌</span>' : '<span class="mode auto" title="Programada automáticamente">⟳</span>';
       case 'name': {
         const caret = sum ? `<span class="caret" data-act="toggle">${t.collapsed ? '▶' : '▼'}</span>` : '<span class="caret empty">·</span>';
         return `<div class="name-wrap"><span class="indent" style="width:${(t.level - 1) * 16}px"></span>${caret}${t.milestone ? '<span class="ms-icon">◆</span>' : ''}<span class="name-text" title="${U.esc(t.name)}">${U.esc(t.name)}</span></div>`;
@@ -211,6 +214,12 @@ const Table = (() => {
     const { project, computed } = Store; const t = project.tasks[i]; if (!t) return;
     const sum = computed.outline.isSummary[i];
     const def = COLS.find(c => c.key === col); if (!def || !def.edit) return;
+    if (col === 'mode') {
+      if (sum) { App.toast('Las tareas de resumen se programan siempre a partir de sus subtareas'); return; }
+      const want = initialText == null ? !t.manual : /^m/i.test(initialText) ? true : /^a/i.test(initialText) ? false : null;
+      if (want != null && want !== t.manual) App.setTaskMode(want, [i]);
+      return;
+    }
     if (sum && !['name', 'resources', 'notes', 'deadline'].includes(col)) { App.toast('Ese valor se calcula a partir de las subtareas'); return; }
     const tr = body.querySelector(`tr[data-i="${i}"]`); const td = tr && tr.querySelector(`td[data-col="${col}"]`); if (!td) return;
     const resNames = () => t.resources.map(id => (project.resources.find(r => r.id === id) || {}).name).filter(Boolean).join(', ');
@@ -247,7 +256,7 @@ const Table = (() => {
       switch (col) {
         case 'name': if (value) t.name = value; break;
         case 'duration': { const d = parseInt(value, 10); if (!isNaN(d) && d >= 0) { t.duration = d; t.milestone = d === 0; } break; }
-        case 'start': { const d = U.parseUserDate(value); if (d != null) t.constraint = { type: 'SNET', date: U.fromDay(cal.next(d)) }; break; }
+        case 'start': { const d = U.parseUserDate(value); if (d != null) { if (t.manual) t.manualStart = U.fromDay(cal.next(d)); else t.constraint = { type: 'SNET', date: U.fromDay(cal.next(d)) }; } break; }
         case 'finish': { const d = U.parseUserDate(value); if (d != null) { const nd = cal.duration(c.es, cal.prev(d)); if (nd >= 1) { t.duration = nd; t.milestone = false; } else { t.duration = 0; t.milestone = true; } } break; }
         case 'preds': { const r = parsePreds(value, i); t.predecessors = r.preds; if (r.errors.length) App.toast('Predecesoras no reconocidas: ' + r.errors.join(', ')); break; }
         case 'resources': {

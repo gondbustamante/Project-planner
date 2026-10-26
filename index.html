@@ -65,6 +65,12 @@
     </div>
     <div class="rgroup">
       <div class="rbtns">
+        <button class="big" id="btnModeManual" title="Programar manualmente: el comienzo queda fijo y los vínculos o restricciones no mueven la tarea"><span class="ico">📌</span>Manual</button>
+        <button class="big" id="btnModeAuto" title="Programar automáticamente: las fechas se calculan a partir de vínculos, restricciones y calendario"><span class="ico">⟳</span>Automática</button>
+      </div><div class="rlabel">Modo de tarea</div>
+    </div>
+    <div class="rgroup">
+      <div class="rbtns">
         <div class="rcol">
           <button id="btnOutdent" title="Anular sangría (Alt+Mayús+←)">⇤ Anular sangría</button>
           <button id="btnIndent" title="Aplicar sangría (Alt+Mayús+→)">⇥ Aplicar sangría</button>
@@ -165,6 +171,12 @@
         <button class="big" id="btnBaseline" title="Establecer, borrar y mostrar líneas base"><span class="ico">📌</span>Establecer<br>línea base</button>
         <button class="big" id="btnStats" title="Estadísticas del proyecto"><span class="ico">📊</span>Estadísticas</button>
       </div><div class="rlabel">Programación</div>
+    </div>
+    <div class="rgroup">
+      <div class="rbtns">
+        <button class="big" id="btnModeManual" title="Programar manualmente: el comienzo queda fijo y los vínculos o restricciones no mueven la tarea"><span class="ico">📌</span>Manual</button>
+        <button class="big" id="btnModeAuto" title="Programar automáticamente: las fechas se calculan a partir de vínculos, restricciones y calendario"><span class="ico">⟳</span>Automática</button>
+      </div><div class="rlabel">Modo de tarea</div>
     </div>
   </div>
 
@@ -273,7 +285,7 @@
 <footer class="statusbar">
   <div id="statusbar" class="status-left"></div>
   <div class="status-right">
-    <span id="statusMode">Nuevas tareas: programadas automáticamente</span>
+    <button type="button" id="statusMode" title="Clic para cambiar cómo se programan las tareas nuevas">Nuevas tareas: programadas automáticamente</button>
     <input type="range" id="zoomSlider" min="3" max="60" step="1" value="14" title="Zoom de la escala temporal">
   </div>
 </footer>
@@ -300,9 +312,10 @@
         <label class="check"><input id="tMilestone" type="checkbox"> Es un hito</label>
         <label>Comienzo<input id="tStart" type="date"></label>
         <label>Fin<input id="tFinish" type="date"></label>
+        <label>Modo de programación<select id="tMode"><option value="auto">Programada automáticamente</option><option value="manual">Programada manualmente</option></select></label>
         <label>Prioridad<select id="tPriority"><option value="500">Normal</option><option value="700">Alta</option><option value="900">Muy alta</option><option value="300">Baja</option></select></label>
       </div>
-      <div class="hint">Al escribir un comienzo se aplica la restricción «No comenzar antes del»; al escribir un fin se recalcula la duración.</div>
+      <div class="hint" id="tModeHint"></div>
     </div>
     <div class="tabpanel" data-tab="preds">
       <table class="mini" id="tPredTable">
@@ -368,6 +381,7 @@
         <label style="grid-column:1/3">Nombre<input id="pName"></label>
         <label>Fecha de inicio<input id="pStart" type="date"></label>
         <label>Fecha de estado (línea de progreso)<input id="pStatusDate" type="date"></label>
+        <label>Las tareas nuevas se programan<select id="pNewMode"><option value="auto">Automáticamente</option><option value="manual">Manualmente</option></select></label>
         <label style="grid-column:1/-1">Descripción<textarea id="pNotes" rows="3"></textarea></label>
       </div>
       <div class="computed" id="pComputed"></div>
