@@ -11,14 +11,14 @@ const Store = (() => {
       id: U.uid(), name: o.name ?? 'Nueva tarea', level: o.level ?? 1, duration: o.duration ?? (o.milestone ? 0 : 5),
       milestone: !!o.milestone, progress: o.progress ?? 0, predecessors: o.predecessors ?? [], resources: o.resources ?? [],
       constraint: o.constraint ?? { type: 'ASAP', date: null }, notes: o.notes ?? '', collapsed: false, baselines: o.baselines ?? {}, ignoreResourceCalendars: !!o.ignoreResourceCalendars, deadline: o.deadline ?? null, priority: o.priority ?? 500,
-      start: null, finish: null
+      manual: !!o.manual, manualStart: o.manualStart ?? null, start: null, finish: null
     };
   }
   function newResource(o = {}) {
     return { id: U.uid(), name: o.name ?? 'Responsable', role: o.role ?? '', color: o.color ?? U.PALETTE[(project ? project.resources.length : 0) % U.PALETTE.length], calendar: o.calendar ?? null };
   }
   function blank(name) {
-    return { version: 2, id: U.uid(), name: name || 'Nuevo proyecto', start: U.fromDay(U.today()), statusDate: null, statusComment: '', notes: '', calendar: { workDays: [1, 2, 3, 4, 5], exceptions: [] }, resources: [], tasks: [], baselines: {}, modified: Date.now() };
+    return { version: 2, id: U.uid(), name: name || 'Nuevo proyecto', start: U.fromDay(U.today()), statusDate: null, statusComment: '', notes: '', calendar: { workDays: [1, 2, 3, 4, 5], exceptions: [] }, newTasksManual: false, resources: [], tasks: [], baselines: {}, modified: Date.now() };
   }
   function normalize(p) {
     const b = blank();
@@ -33,8 +33,10 @@ const Store = (() => {
       if (!x.baselines || typeof x.baselines !== 'object') x.baselines = {};
       if (x.baseline && !x.baselines[0]) x.baselines[0] = x.baseline;
       delete x.baseline;
+      x.manual = !!x.manual; if (U.toDay(x.manualStart) == null) x.manualStart = null;
       return x;
     });
+    p.newTasksManual = !!p.newTasksManual;
     if (!p.baselines || typeof p.baselines !== 'object') p.baselines = {};
     if (p.baselineDate && !p.baselines[0]) p.baselines[0] = { date: p.baselineDate };
     delete p.baselineDate;
